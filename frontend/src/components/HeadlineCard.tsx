@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, HStack, Image, Text, VStack, Badge, Link } from '@chakra-ui/react';
+import { Box, HStack, Image, Text, VStack, Badge, Link, Tooltip } from '@chakra-ui/react';
 
 export default function HeadlineCard({ headline }: { headline: any }) {
   const youtubeUrl = `https://www.youtube.com/watch?v=${headline.id}`;
@@ -34,15 +34,21 @@ export default function HeadlineCard({ headline }: { headline: any }) {
         aspectRatio="16/9"
       />
       <VStack align="start" spacing={1} flex={1} overflow="hidden">
-        <Link href={youtubeUrl} isExternal _hover={{ textDecoration: 'none' }}>
-          <Text fontSize="sm" fontWeight="bold" lineHeight="1.4" color="gray.800"
-            _hover={{ color: 'red.500' }} transition="color 0.1s" noOfLines={3}>
-            {headline.title_zh}
+        <Tooltip label={headline.title_zh} placement="top" hasArrow openDelay={400}
+          bg="gray.700" color="white" fontSize="xs" borderRadius="md" maxW="280px">
+          <Link href={youtubeUrl} isExternal _hover={{ textDecoration: 'none' }}>
+            <Text fontSize="sm" fontWeight="bold" lineHeight="1.4" color="gray.800"
+              _hover={{ color: 'red.500' }} transition="color 0.1s" noOfLines={3}>
+              {headline.title_zh}
+            </Text>
+          </Link>
+        </Tooltip>
+        <Tooltip label={headline.title_en} placement="bottom" hasArrow openDelay={400}
+          bg="gray.700" color="white" fontSize="xs" borderRadius="md" maxW="280px">
+          <Text fontSize="xs" color="gray.500" lineHeight="1.4" noOfLines={3} cursor="default">
+            {headline.title_en}
           </Text>
-        </Link>
-        <Text fontSize="xs" color="gray.500" lineHeight="1.4" noOfLines={3}>
-          {headline.title_en}
-        </Text>
+        </Tooltip>
         <HStack spacing={2} pt={1}>
           <Badge colorScheme="red" fontSize="2xs">{headline.channel}</Badge>
           <Text fontSize="2xs" color="gray.400">{datetime}</Text>

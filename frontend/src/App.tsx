@@ -11,7 +11,7 @@ const supabase = createClient(
   import.meta.env.VITE_SUPABASE_ANON_KEY
 );
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 100;
 
 function toSlug(date: string) {
   return date.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();

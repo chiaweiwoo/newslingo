@@ -1,44 +1,53 @@
 import React from 'react';
-import { Box, Image, Text, VStack, Badge, LinkBox, LinkOverlay } from '@chakra-ui/react';
+import { Box, HStack, Image, Text, VStack, Badge, Link } from '@chakra-ui/react';
 
 export default function HeadlineCard({ headline }: { headline: any }) {
   const youtubeUrl = `https://www.youtube.com/watch?v=${headline.id}`;
-  const date = new Date(headline.published_at).toLocaleDateString('en-MY', {
+  const datetime = new Date(headline.published_at).toLocaleString('en-MY', {
     day: 'numeric',
     month: 'short',
-    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
   });
 
   return (
-    <LinkBox
-      as="article"
-      borderWidth="1px"
-      borderRadius="lg"
-      overflow="hidden"
-      boxShadow="sm"
-      _hover={{ boxShadow: 'md', transform: 'translateY(-2px)' }}
-      transition="all 0.15s ease"
+    <HStack
+      align="start"
+      spacing={3}
+      p={3}
       bg="white"
+      borderRadius="lg"
+      borderWidth="1px"
+      borderColor="gray.100"
+      boxShadow="sm"
+      _hover={{ boxShadow: 'md', borderColor: 'gray.200' }}
+      transition="all 0.15s ease"
     >
       <Image
         src={headline.thumbnail_url}
         alt={headline.title_zh}
-        w="100%"
+        borderRadius="md"
+        w="120px"
+        minW="120px"
         objectFit="cover"
         aspectRatio="16/9"
       />
-      <VStack align="start" spacing={2} p={4}>
-        <Badge colorScheme="red" fontSize="xs">{headline.channel}</Badge>
-        <LinkOverlay href={youtubeUrl} isExternal>
-          <Text fontWeight="bold" fontSize="sm" lineHeight="1.4" noOfLines={3}>
+      <VStack align="start" spacing={1} flex={1} overflow="hidden">
+        <Link href={youtubeUrl} isExternal _hover={{ textDecoration: 'none' }}>
+          <Text fontSize="sm" fontWeight="bold" lineHeight="1.4" color="gray.800"
+            _hover={{ color: 'red.500' }} transition="color 0.1s" noOfLines={3}>
             {headline.title_zh}
           </Text>
-        </LinkOverlay>
-        <Text color="gray.500" fontSize="xs" lineHeight="1.4" noOfLines={3}>
+        </Link>
+        <Text fontSize="xs" color="gray.500" lineHeight="1.4" noOfLines={3}>
           {headline.title_en}
         </Text>
-        <Text color="gray.400" fontSize="xs" mt={1}>{date}</Text>
+        <HStack spacing={2} pt={1}>
+          <Badge colorScheme="red" fontSize="2xs">{headline.channel}</Badge>
+          <Text fontSize="2xs" color="gray.400">{datetime}</Text>
+        </HStack>
       </VStack>
-    </LinkBox>
+    </HStack>
   );
 }

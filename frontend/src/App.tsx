@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   Box, Container, Flex, Heading, SimpleGrid, Spinner,
-  Text, Button, Center, VStack, Divider, Link, HStack
+  Text, Button, Center, VStack, Divider, Link, HStack, Badge
 } from '@chakra-ui/react';
 import { createClient } from '@supabase/supabase-js';
 import HeadlineCard from './components/HeadlineCard';
@@ -66,127 +66,207 @@ export default function App() {
 
   return (
     <Box minH="100vh" bg="gray.50">
-      <Box bg="white" borderBottomWidth="1px" borderColor="gray.200" py={5}>
-        <Container maxW="container.xl">
-          <Heading size="lg" color="gray.800">🗞 Malaysian News</Heading>
-          <Text color="gray.500" fontSize="sm" mt={1}>
-            Latest from Astro 本地圈 — Chinese headlines with English translations
-          </Text>
+
+      {/* Header */}
+      <Box bg="gray.900" borderBottom="3px solid" borderColor="red.500">
+        <Container maxW="container.xl" py={5}>
+          <Flex align="center" justify="space-between">
+            <Box>
+              <HStack spacing={2} align="baseline">
+                <Heading
+                  size="lg" color="white" fontWeight="black"
+                  letterSpacing="-0.5px" fontFamily="'Georgia', serif"
+                >
+                  NewsLingo
+                </Heading>
+                <Text color="red.400" fontSize="xs" fontWeight="bold" letterSpacing="widest">
+                  BETA
+                </Text>
+              </HStack>
+              <Text color="gray.400" fontSize="xs" mt={1} letterSpacing="wide">
+                中英双语时事 · Malaysian news in Chinese & English
+              </Text>
+            </Box>
+            <Text color="gray.600" fontSize="xs" display={{ base: 'none', md: 'block' }}>
+              Source: Astro 本地圈
+            </Text>
+          </Flex>
         </Container>
       </Box>
 
-      <Container maxW="container.xl" pb={12} pt={6}>
+      <Container maxW="container.xl" pb={16} pt={8}>
         {loading ? (
-          <Center py={20}>
-            <Spinner size="xl" color="red.500" />
+          <Center py={24}>
+            <VStack spacing={4}>
+              <Spinner size="xl" color="red.500" thickness="3px" />
+              <Text color="gray.400" fontSize="sm">Loading headlines…</Text>
+            </VStack>
           </Center>
         ) : headlines.length === 0 ? (
-          <Center py={20}>
+          <Center py={24}>
             <VStack spacing={3}>
-              <Text fontSize="xl">😶 No headlines yet</Text>
-              <Text color="gray.500" fontSize="sm">Run the job to fetch the latest news</Text>
+              <Text fontSize="2xl">📭</Text>
+              <Text fontWeight="semibold" color="gray.600">No headlines yet</Text>
+              <Text color="gray.400" fontSize="sm">Run the job to fetch the latest news</Text>
             </VStack>
           </Center>
         ) : (
-          <Flex gap={8} align="start">
+          <Flex gap={10} align="start">
 
-            {/* Left timeline panel */}
+            {/* Timeline sidebar */}
             <Box
-              w="160px"
-              minW="160px"
+              w="140px"
+              minW="140px"
               position="sticky"
               top="24px"
               maxH="calc(100vh - 48px)"
               overflowY="auto"
+              sx={{ '&::-webkit-scrollbar': { display: 'none' } }}
             >
-              <Text fontSize="xs" fontWeight="bold" color="gray.400"
-                textTransform="uppercase" letterSpacing="wider" mb={3}>
-                Dates
+              <Text fontSize="2xs" fontWeight="bold" color="gray.400"
+                textTransform="uppercase" letterSpacing="widest" mb={4}>
+                Timeline
               </Text>
-              <VStack align="start" spacing={0}>
-                {dates.map((date, i) => {
-                  const isActive = activeDate === date;
-                  const shortDate = new Date(grouped[date][0].published_at)
-                    .toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' });
-                  return (
-                    <Box key={date} w="100%">
-                      <Flex align="center" gap={2} py={2}>
+
+              <Box position="relative">
+                {/* Continuous vertical rail */}
+                <Box
+                  position="absolute"
+                  left="5px"
+                  top="8px"
+                  bottom="8px"
+                  w="2px"
+                  bg="gray.100"
+                  borderRadius="full"
+                />
+
+                <VStack align="start" spacing={0} position="relative">
+                  {dates.map((date) => {
+                    const isActive = activeDate === date;
+                    const shortDate = new Date(grouped[date][0].published_at)
+                      .toLocaleDateString('en-MY', { day: 'numeric', month: 'short' });
+                    const year = new Date(grouped[date][0].published_at)
+                      .getFullYear().toString();
+                    return (
+                      <Flex
+                        key={date}
+                        align="center"
+                        gap={3}
+                        py={2}
+                        cursor="pointer"
+                        w="100%"
+                        onClick={() => scrollToDate(date)}
+                        role="button"
+                      >
                         <Box
-                          w="2px"
-                          h="100%"
-                          minH="16px"
-                          bg={isActive ? 'red.400' : 'gray.200'}
+                          w="12px"
+                          h="12px"
                           borderRadius="full"
                           flexShrink={0}
+                          bg={isActive ? 'red.500' : 'white'}
+                          borderWidth="2px"
+                          borderColor={isActive ? 'red.500' : 'gray.300'}
+                          transition="all 0.15s"
+                          zIndex={1}
                         />
-                        <Link
-                          onClick={() => scrollToDate(date)}
-                          fontSize="xs"
-                          color={isActive ? 'red.500' : 'gray.500'}
-                          fontWeight={isActive ? 'bold' : 'normal'}
-                          cursor="pointer"
-                          _hover={{ color: 'red.400', textDecoration: 'none' }}
-                          lineHeight="1.3"
-                        >
-                          {shortDate}
-                        </Link>
+                        <Box>
+                          <Text
+                            fontSize="xs"
+                            color={isActive ? 'red.600' : 'gray.500'}
+                            fontWeight={isActive ? 'bold' : 'normal'}
+                            lineHeight="1.2"
+                            _hover={{ color: 'red.500' }}
+                            transition="color 0.1s"
+                          >
+                            {shortDate}
+                          </Text>
+                          <Text fontSize="2xs" color="gray.400" lineHeight="1">{year}</Text>
+                        </Box>
                       </Flex>
-                    </Box>
-                  );
-                })}
-              </VStack>
+                    );
+                  })}
+                </VStack>
+              </Box>
             </Box>
 
             {/* Main content */}
             <Box flex={1} minW={0}>
-              <VStack spacing={10} align="stretch">
+              <VStack spacing={12} align="stretch">
                 {Object.entries(grouped).map(([date, items]) => {
                   const malaysia = items.filter(h => h.category === 'Malaysia');
                   const international = items.filter(h => h.category === 'International');
                   return (
                     <Box key={date} id={toSlug(date)}>
-                      <Text fontSize="xs" fontWeight="bold" color="gray.400"
-                        textTransform="uppercase" letterSpacing="wider" mb={3}>
-                        {date}
-                      </Text>
-                      <Divider mb={4} />
-                      <SimpleGrid columns={{ base: 1, md: 2 }} spacing={6}>
+
+                      {/* Date divider */}
+                      <Flex align="center" gap={4} mb={6}>
+                        <Divider borderColor="gray.200" />
+                        <Text
+                          fontSize="xs" fontWeight="bold" color="gray.500"
+                          whiteSpace="nowrap" textTransform="uppercase" letterSpacing="widest"
+                          flexShrink={0}
+                        >
+                          {date}
+                        </Text>
+                        <Divider borderColor="gray.200" />
+                      </Flex>
+
+                      <SimpleGrid columns={{ base: 1, md: 2 }} spacing={8}>
+
+                        {/* Malaysia column */}
                         <Box>
-                          <HStack spacing={2} mb={3}>
-                            <Box w="3px" h="16px" bg="red.400" borderRadius="full" />
-                            <Text fontSize="xs" fontWeight="bold" color="red.500"
-                              textTransform="uppercase" letterSpacing="wider">
-                              Malaysia
-                            </Text>
-                            <Text fontSize="xs" color="gray.400">({malaysia.length})</Text>
-                          </HStack>
-                          <VStack spacing={3} align="stretch">
-                            {malaysia.map(h => (
-                              <HeadlineCard key={h.id} headline={h} />
-                            ))}
+                          <Flex align="center" justify="space-between"
+                            mb={4} pb={3} borderBottomWidth="2px" borderColor="red.200">
+                            <HStack spacing={2}>
+                              <Text fontSize="base">🇲🇾</Text>
+                              <Text fontSize="sm" fontWeight="bold" color="red.600"
+                                letterSpacing="wide">
+                                Malaysia
+                              </Text>
+                            </HStack>
+                            <Badge colorScheme="red" variant="subtle" borderRadius="full"
+                              fontSize="xs" px={2}>
+                              {malaysia.length}
+                            </Badge>
+                          </Flex>
+                          <VStack spacing={4} align="stretch">
+                            {malaysia.map(h => <HeadlineCard key={h.id} headline={h} />)}
                             {malaysia.length === 0 && (
-                              <Text fontSize="xs" color="gray.300" fontStyle="italic">No local news</Text>
+                              <Text fontSize="xs" color="gray.300" fontStyle="italic" py={4}
+                                textAlign="center">
+                                No local news this day
+                              </Text>
                             )}
                           </VStack>
                         </Box>
+
+                        {/* International column */}
                         <Box>
-                          <HStack spacing={2} mb={3}>
-                            <Box w="3px" h="16px" bg="blue.400" borderRadius="full" />
-                            <Text fontSize="xs" fontWeight="bold" color="blue.500"
-                              textTransform="uppercase" letterSpacing="wider">
-                              International
-                            </Text>
-                            <Text fontSize="xs" color="gray.400">({international.length})</Text>
-                          </HStack>
-                          <VStack spacing={3} align="stretch">
-                            {international.map(h => (
-                              <HeadlineCard key={h.id} headline={h} />
-                            ))}
+                          <Flex align="center" justify="space-between"
+                            mb={4} pb={3} borderBottomWidth="2px" borderColor="blue.200">
+                            <HStack spacing={2}>
+                              <Text fontSize="base">🌍</Text>
+                              <Text fontSize="sm" fontWeight="bold" color="blue.600"
+                                letterSpacing="wide">
+                                International
+                              </Text>
+                            </HStack>
+                            <Badge colorScheme="blue" variant="subtle" borderRadius="full"
+                              fontSize="xs" px={2}>
+                              {international.length}
+                            </Badge>
+                          </Flex>
+                          <VStack spacing={4} align="stretch">
+                            {international.map(h => <HeadlineCard key={h.id} headline={h} />)}
                             {international.length === 0 && (
-                              <Text fontSize="xs" color="gray.300" fontStyle="italic">No international news</Text>
+                              <Text fontSize="xs" color="gray.300" fontStyle="italic" py={4}
+                                textAlign="center">
+                                No international news this day
+                              </Text>
                             )}
                           </VStack>
                         </Box>
+
                       </SimpleGrid>
                     </Box>
                   );
@@ -194,14 +274,16 @@ export default function App() {
               </VStack>
 
               {hasMore && (
-                <Center mt={10}>
+                <Center mt={12}>
                   <Button
                     onClick={() => fetchHeadlines(headlines.length)}
                     isLoading={loadingMore}
-                    loadingText="Loading..."
+                    loadingText="Loading…"
                     colorScheme="red"
                     variant="outline"
                     size="md"
+                    borderRadius="full"
+                    px={8}
                   >
                     Load more
                   </Button>
@@ -209,8 +291,12 @@ export default function App() {
               )}
 
               {!hasMore && headlines.length > 0 && (
-                <Center mt={10}>
-                  <Text color="gray.400" fontSize="sm">You've reached the end</Text>
+                <Center mt={12}>
+                  <HStack spacing={3} color="gray.300">
+                    <Divider w="60px" />
+                    <Text fontSize="xs">you've caught up</Text>
+                    <Divider w="60px" />
+                  </HStack>
                 </Center>
               )}
             </Box>

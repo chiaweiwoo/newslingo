@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, HStack, Image, Text, VStack, Badge, Link, Tooltip } from '@chakra-ui/react';
+import { Box, Image, Text, HStack, Badge, Link, Tooltip } from '@chakra-ui/react';
 
 export default function HeadlineCard({ headline }: { headline: any }) {
   const youtubeUrl = `https://www.youtube.com/watch?v=${headline.id}`;
@@ -12,48 +12,54 @@ export default function HeadlineCard({ headline }: { headline: any }) {
   });
 
   return (
-    <HStack
-      align="start"
-      spacing={3}
-      p={3}
+    <Box
       bg="white"
-      borderRadius="lg"
-      borderWidth="1px"
-      borderColor="gray.100"
+      borderRadius="xl"
+      overflow="hidden"
       boxShadow="sm"
-      _hover={{ boxShadow: 'md', borderColor: 'gray.200' }}
-      transition="all 0.15s ease"
+      _hover={{ boxShadow: 'lg', transform: 'translateY(-2px)' }}
+      transition="all 0.2s ease"
     >
-      <Image
-        src={headline.thumbnail_url}
-        alt={headline.title_zh}
-        borderRadius="md"
-        w="120px"
-        minW="120px"
-        objectFit="cover"
-        aspectRatio="16/9"
-      />
-      <VStack align="start" spacing={1} flex={1} overflow="hidden">
+      <Link href={youtubeUrl} isExternal display="block" _hover={{ textDecoration: 'none' }}>
+        <Image
+          src={headline.thumbnail_url}
+          alt={headline.title_zh}
+          w="100%"
+          objectFit="cover"
+          aspectRatio="16/9"
+        />
+      </Link>
+
+      <Box p={3}>
         <Tooltip label={headline.title_zh} placement="top" hasArrow openDelay={400}
-          bg="gray.700" color="white" fontSize="xs" borderRadius="md" maxW="280px">
+          bg="gray.800" color="white" fontSize="xs" borderRadius="md" maxW="300px">
           <Link href={youtubeUrl} isExternal _hover={{ textDecoration: 'none' }}>
-            <Text fontSize="sm" fontWeight="bold" lineHeight="1.4" color="gray.800"
-              _hover={{ color: 'red.500' }} transition="color 0.1s" noOfLines={3}>
+            <Text
+              fontSize="sm" fontWeight="bold" lineHeight="1.45" color="gray.800"
+              _hover={{ color: 'red.500' }} transition="color 0.15s" noOfLines={2} mb={1}
+            >
               {headline.title_zh}
             </Text>
           </Link>
         </Tooltip>
+
         <Tooltip label={headline.title_en} placement="bottom" hasArrow openDelay={400}
-          bg="gray.700" color="white" fontSize="xs" borderRadius="md" maxW="280px">
-          <Text fontSize="xs" color="gray.500" lineHeight="1.4" noOfLines={3} cursor="default">
+          bg="gray.800" color="white" fontSize="xs" borderRadius="md" maxW="300px">
+          <Text
+            fontSize="xs" color="gray.500" lineHeight="1.5" noOfLines={2}
+            cursor="default" mb={3}
+          >
             {headline.title_en}
           </Text>
         </Tooltip>
-        <HStack spacing={2} pt={1}>
-          <Badge colorScheme="red" fontSize="2xs">{headline.channel}</Badge>
-          <Text fontSize="2xs" color="gray.400">{datetime}</Text>
+
+        <HStack spacing={2} borderTopWidth="1px" borderColor="gray.50" pt={2}>
+          <Badge colorScheme="red" variant="subtle" fontSize="2xs" borderRadius="full" px={2}>
+            {headline.channel}
+          </Badge>
+          <Text fontSize="2xs" color="gray.400" ml="auto">{datetime}</Text>
         </HStack>
-      </VStack>
-    </HStack>
+      </Box>
+    </Box>
   );
 }

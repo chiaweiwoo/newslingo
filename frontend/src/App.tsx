@@ -90,7 +90,7 @@ export default function App() {
   }
 
   return (
-    <Flex direction="column" h="100vh" bg="gray.50">
+    <Flex direction="column" h={{ base: 'auto', md: '100vh' }} minH="100vh" bg="gray.50">
 
       {/* Header — static, no sticky needed */}
       <Box bg="gray.900" borderBottom="3px solid" borderColor="red.500" flexShrink={0}>
@@ -107,11 +107,12 @@ export default function App() {
         </Box>
       </Box>
 
-      {/* Body — fills remaining viewport height, no page scroll */}
-      <Flex flex={1} overflow="hidden" maxW="1280px" mx="auto" w="100%" px={6}>
+      {/* Body */}
+      <Flex flex={1} overflow={{ base: 'visible', md: 'hidden' }} maxW="1280px" mx="auto" w="100%" px={{ base: 4, md: 6 }}>
 
-        {/* Sidebar — completely static */}
+        {/* Sidebar — hidden on mobile */}
         <Box
+          display={{ base: 'none', md: 'block' }}
           w="150px"
           minW="150px"
           py={8}
@@ -170,8 +171,8 @@ export default function App() {
           )}
         </Box>
 
-        {/* Main content — only this scrolls */}
-        <Box flex={1} overflowY="auto" ref={scrollRef} minW={0}
+        {/* Main content */}
+        <Box flex={1} overflowY={{ base: 'visible', md: 'auto' }} ref={scrollRef} minW={0}
           sx={{ '&::-webkit-scrollbar': { width: '6px' }, '&::-webkit-scrollbar-thumb': { bg: 'gray.200', borderRadius: 'full' } }}>
 
           {loading ? (

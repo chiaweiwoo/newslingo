@@ -35,6 +35,7 @@ titles_zh = []
 for item in items:
     raw_title = html.unescape(item["snippet"]["title"])
     title_zh = re.sub(r'\s*\|.*$', '', raw_title).strip()
+    title_zh = re.sub(r'\s*#\S+', '', title_zh).strip()
     titles_zh.append(title_zh)
 
 numbered = "\n".join(f"{i+1}. {t}" for i, t in enumerate(titles_zh))

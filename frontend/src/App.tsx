@@ -56,11 +56,30 @@ export default function App() {
   const grouped = groupByDate(headlines);
   const dates = Object.keys(grouped);
 
+  useEffect(() => {
+    if (dates.length === 0) return;
+    const OFFSET = 110; // sticky header height + buffer
+
+    const onScroll = () => {
+      for (let i = dates.length - 1; i >= 0; i--) {
+        const el = document.getElementById(toSlug(dates[i]));
+        if (el && el.getBoundingClientRect().top <= OFFSET) {
+          setActiveDate(dates[i]);
+          return;
+        }
+      }
+      setActiveDate(dates[0]);
+    };
+
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+    return () => window.removeEventListener('scroll', onScroll);
+  }, [dates.join(',')]);
+
   function scrollToDate(date: string) {
     const el = document.getElementById(toSlug(date));
     if (el) {
       el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      setActiveDate(date);
     }
   }
 

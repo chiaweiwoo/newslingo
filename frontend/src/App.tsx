@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   Box, Container, Flex, Heading, SimpleGrid, Spinner,
-  Text, Button, Center, VStack, Divider, Link
+  Text, Button, Center, VStack, Divider, Link, HStack
 } from '@chakra-ui/react';
 import { createClient } from '@supabase/supabase-js';
 import HeadlineCard from './components/HeadlineCard';
@@ -140,20 +140,57 @@ export default function App() {
             {/* Main content */}
             <Box flex={1} minW={0}>
               <VStack spacing={10} align="stretch">
-                {Object.entries(grouped).map(([date, items]) => (
-                  <Box key={date} id={toSlug(date)}>
-                    <Text fontSize="xs" fontWeight="bold" color="gray.400"
-                      textTransform="uppercase" letterSpacing="wider" mb={3}>
-                      {date}
-                    </Text>
-                    <Divider mb={4} />
-                    <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing={4}>
-                      {items.map(h => (
-                        <HeadlineCard key={h.id} headline={h} />
-                      ))}
-                    </SimpleGrid>
-                  </Box>
-                ))}
+                {Object.entries(grouped).map(([date, items]) => {
+                  const malaysia = items.filter(h => h.category === 'Malaysia');
+                  const international = items.filter(h => h.category === 'International');
+                  return (
+                    <Box key={date} id={toSlug(date)}>
+                      <Text fontSize="xs" fontWeight="bold" color="gray.400"
+                        textTransform="uppercase" letterSpacing="wider" mb={3}>
+                        {date}
+                      </Text>
+                      <Divider mb={4} />
+                      <SimpleGrid columns={{ base: 1, md: 2 }} spacing={6}>
+                        <Box>
+                          <HStack spacing={2} mb={3}>
+                            <Box w="3px" h="16px" bg="red.400" borderRadius="full" />
+                            <Text fontSize="xs" fontWeight="bold" color="red.500"
+                              textTransform="uppercase" letterSpacing="wider">
+                              Malaysia
+                            </Text>
+                            <Text fontSize="xs" color="gray.400">({malaysia.length})</Text>
+                          </HStack>
+                          <VStack spacing={3} align="stretch">
+                            {malaysia.map(h => (
+                              <HeadlineCard key={h.id} headline={h} />
+                            ))}
+                            {malaysia.length === 0 && (
+                              <Text fontSize="xs" color="gray.300" fontStyle="italic">No local news</Text>
+                            )}
+                          </VStack>
+                        </Box>
+                        <Box>
+                          <HStack spacing={2} mb={3}>
+                            <Box w="3px" h="16px" bg="blue.400" borderRadius="full" />
+                            <Text fontSize="xs" fontWeight="bold" color="blue.500"
+                              textTransform="uppercase" letterSpacing="wider">
+                              International
+                            </Text>
+                            <Text fontSize="xs" color="gray.400">({international.length})</Text>
+                          </HStack>
+                          <VStack spacing={3} align="stretch">
+                            {international.map(h => (
+                              <HeadlineCard key={h.id} headline={h} />
+                            ))}
+                            {international.length === 0 && (
+                              <Text fontSize="xs" color="gray.300" fontStyle="italic">No international news</Text>
+                            )}
+                          </VStack>
+                        </Box>
+                      </SimpleGrid>
+                    </Box>
+                  );
+                })}
               </VStack>
 
               {hasMore && (

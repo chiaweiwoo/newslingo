@@ -1,72 +1,51 @@
 import React from 'react';
-import { Box, Flex, Image, Text, HStack, Badge, Link, Tooltip, useBreakpointValue } from '@chakra-ui/react';
+import { Box, HStack, Image, Text, Badge, Link } from '@chakra-ui/react';
 
 export default function HeadlineCard({ headline }: { headline: any }) {
   const youtubeUrl = `https://www.youtube.com/watch?v=${headline.id}`;
   const datetime = new Date(headline.published_at).toLocaleString('en-MY', {
-    day: 'numeric',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true,
+    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true,
   });
-
-  const isMobile = useBreakpointValue({ base: true, md: false });
-  const lines = isMobile ? undefined : 2;
-  const cardH = isMobile ? 'auto' : '112px';
 
   return (
     <HStack
-      align="stretch"
+      align="start"
       spacing={3}
       p={3}
       bg="white"
-      borderRadius="lg"
+      borderRadius="xl"
       boxShadow="xs"
-      h={cardH}
-      _hover={{ boxShadow: 'md', transform: 'translateY(-1px)' }}
-      transition="all 0.15s ease"
+      _hover={{ boxShadow: 'sm' }}
+      transition="box-shadow 0.15s"
     >
-      <Link href={youtubeUrl} isExternal flexShrink={0} alignSelf="flex-start"
-        _hover={{ opacity: 0.88 }}>
+      <Link href={youtubeUrl} isExternal flexShrink={0}>
         <Image
           src={headline.thumbnail_url}
           alt={headline.title_zh}
           borderRadius="md"
-          w="88px"
-          h="50px"
+          w="96px"
+          h="54px"
           objectFit="cover"
         />
       </Link>
 
-      <Flex direction="column" flex={1} overflow="hidden" justify="space-between" gap={1}>
-        <Box overflow="hidden">
-          <Tooltip isDisabled={isMobile} label={headline.title_zh} placement="top" hasArrow openDelay={500}
-            bg="gray.800" color="white" fontSize="xs" borderRadius="md" maxW="300px">
-            <Link href={youtubeUrl} isExternal _hover={{ textDecoration: 'none' }}>
-              <Text fontSize="xs" fontWeight="bold" lineHeight="1.4" color="gray.800"
-                _hover={{ color: 'red.500' }} transition="color 0.1s" noOfLines={lines}>
-                {headline.title_zh}
-              </Text>
-            </Link>
-          </Tooltip>
-
-          <Tooltip isDisabled={isMobile} label={headline.title_en} placement="bottom" hasArrow openDelay={500}
-            bg="gray.800" color="white" fontSize="xs" borderRadius="md" maxW="300px">
-            <Text fontSize="xs" color="gray.400" lineHeight="1.4" noOfLines={lines}
-              cursor="default" mt={1}>
-              {headline.title_en}
-            </Text>
-          </Tooltip>
-        </Box>
-
-        <HStack spacing={2} flexShrink={0} mt={isMobile ? 2 : 0}>
+      <Box flex={1} minW={0}>
+        <Link href={youtubeUrl} isExternal _hover={{ textDecoration: 'none' }}>
+          <Text fontSize="sm" fontWeight="bold" lineHeight="1.4" color="gray.800"
+            _hover={{ color: 'red.500' }} transition="color 0.1s">
+            {headline.title_zh}
+          </Text>
+        </Link>
+        <Text fontSize="xs" color="gray.500" lineHeight="1.5" mt={0.5}>
+          {headline.title_en}
+        </Text>
+        <HStack spacing={2} mt={1.5}>
           <Badge colorScheme="red" variant="subtle" fontSize="2xs" borderRadius="full" px={1.5}>
             {headline.channel}
           </Badge>
           <Text fontSize="2xs" color="gray.300" ml="auto">{datetime}</Text>
         </HStack>
-      </Flex>
+      </Box>
     </HStack>
   );
 }

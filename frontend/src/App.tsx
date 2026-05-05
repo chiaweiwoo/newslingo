@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Box, Flex, Heading, SimpleGrid, Spinner,
-  Text, Button, Center, VStack, Divider, Link, HStack, Badge
+  Box, Flex, Heading, Spinner, Text, VStack, Divider, HStack, Center
 } from '@chakra-ui/react';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { createClient } from '@supabase/supabase-js';
 import HeadlineCard from './components/HeadlineCard';
 
@@ -11,7 +11,13 @@ const supabase = createClient(
   import.meta.env.VITE_SUPABASE_ANON_KEY
 );
 
-const PAGE_SIZE = 100;
+const PAGE_SIZE = 20;
+type Category = 'International' | 'Malaysia';
+
+const TABS: { label: string; value: Category; icon: string }[] = [
+  { label: 'International', value: 'International', icon: '🌍' },
+  { label: 'Malaysia',      value: 'Malaysia',      icon: '🇲🇾' },
+];
 
 function toSlug(date: string) {
   return date.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
@@ -29,269 +35,201 @@ function groupByDate(headlines: any[]) {
   return groups;
 }
 
-export default function App() {
-  const [headlines, setHeadlines] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
-  const [activeDate, setActiveDate] = useState<string>('');
-  const scrollRef = useRef<HTMLDivElement>(null);
+function timeAgo(dateStr: string): string {
+  const seconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
+  if (seconds < 60) return 'just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
 
+export default function App() {
+  const [activeTab, setActiveTab] = useState<Category>('International');
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  // Visit tracking — fire once on mount
   useEffect(() => {
-    fetchHeadlines(0, true);
+    const track = async () => {
+      try {
+        const { ip } = await fetch('https://api.ipify.org?format=json').then(r => r.json());
+        const ua = navigator.userAgent;
+        await supabase.from('visits').insert({
+          ip,
+          user_agent: ua,
+          is_mobile: /Mobi|Android/i.test(ua),
+        });
+      } catch (_) {}
+    };
+    track();
   }, []);
 
-  async function fetchHeadlines(offset: number, initial = false) {
-    initial ? setLoading(true) : setLoadingMore(true);
-    const { data } = await supabase
-      .from('headlines')
-      .select('*')
-      .order('published_at', { ascending: false })
-      .range(offset, offset + PAGE_SIZE - 1);
-    const rows = data || [];
-    setHeadlines(prev => initial ? rows : [...prev, ...rows]);
-    setHasMore(rows.length === PAGE_SIZE);
-    initial ? setLoading(false) : setLoadingMore(false);
-  }
+  // Latest published_at for "Updated X ago"
+  const { data: latestDate } = useQuery({
+    queryKey: ['latest-date'],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('headlines')
+        .select('published_at')
+        .order('published_at', { ascending: false })
+        .limit(1)
+        .single();
+      return data?.published_at as string | undefined;
+    },
+  });
 
-  const grouped = groupByDate(headlines);
-  const dates = Object.keys(grouped);
+  // Paginated headlines per tab
+  const {
+    data,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading,
+  } = useInfiniteQuery({
+    queryKey: ['headlines', activeTab],
+    queryFn: async ({ pageParam = 0 }) => {
+      const { data } = await supabase
+        .from('headlines')
+        .select('*')
+        .eq('category', activeTab)
+        .order('published_at', { ascending: false })
+        .range(pageParam, pageParam + PAGE_SIZE - 1);
+      return data || [];
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) =>
+      lastPage.length < PAGE_SIZE ? undefined : allPages.flat().length,
+  });
 
+  // Infinite scroll sentinel
   useEffect(() => {
-    const container = scrollRef.current;
-    if (!container || dates.length === 0) return;
-
-    const onScroll = () => {
-      const containerTop = container.getBoundingClientRect().top;
-      for (let i = dates.length - 1; i >= 0; i--) {
-        const el = document.getElementById(toSlug(dates[i]));
-        if (el && el.getBoundingClientRect().top - containerTop <= 24) {
-          setActiveDate(dates[i]);
-          return;
+    const el = sentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && hasNextPage && !isFetchingNextPage) {
+          fetchNextPage();
         }
-      }
-      setActiveDate(dates[0]);
-    };
+      },
+      { rootMargin: '300px' }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
-    container.addEventListener('scroll', onScroll, { passive: true });
-    onScroll();
-    return () => container.removeEventListener('scroll', onScroll);
-  }, [dates.join(',')]);
-
-  function scrollToDate(date: string) {
-    const section = document.getElementById(toSlug(date));
-    const container = scrollRef.current;
-    if (section && container) {
-      const top = section.getBoundingClientRect().top
-        - container.getBoundingClientRect().top
-        + container.scrollTop - 24;
-      container.scrollTo({ top, behavior: 'smooth' });
-    }
-  }
+  const headlines = data?.pages.flat() || [];
+  const grouped = groupByDate(headlines);
 
   return (
-    <Flex direction="column" h={{ base: 'auto', md: '100vh' }} minH="100vh" bg="gray.50">
+    <Box minH="100vh" bg="gray.50">
 
-      {/* Header — static, no sticky needed */}
-      <Box bg="gray.900" borderBottom="3px solid" borderColor="red.500" flexShrink={0}>
-        <Box maxW="1280px" mx="auto" px={6} py={4}>
-          <Heading
-            size="lg" color="white" fontWeight="black"
-            letterSpacing="-0.5px" fontFamily="'Georgia', serif"
-          >
-            NewsLingo
-          </Heading>
-          <Text color="gray.400" fontSize="xs" mt={0.5} letterSpacing="wide">
-            中英双语时事 · Chinese & English bilingual news
-          </Text>
+      {/* Sticky header */}
+      <Box
+        position="sticky" top={0} zIndex={100}
+        bg="gray.900" borderBottom="3px solid" borderColor="red.500"
+      >
+        <Box maxW="600px" mx="auto" px={4}>
+
+          {/* Title row */}
+          <Flex align="center" justify="space-between" pt={3} pb={2}>
+            <Heading
+              size="md" color="white" fontWeight="black"
+              letterSpacing="-0.5px" fontFamily="'Georgia', serif"
+            >
+              NewsLingo
+            </Heading>
+            {latestDate && (
+              <Text fontSize="2xs" color="gray.500" letterSpacing="wide">
+                Updated {timeAgo(latestDate)}
+              </Text>
+            )}
+          </Flex>
+
+          {/* Tab bar */}
+          <Flex>
+            {TABS.map(tab => {
+              const active = activeTab === tab.value;
+              return (
+                <Box
+                  key={tab.value}
+                  flex={1}
+                  py={2.5}
+                  textAlign="center"
+                  cursor="pointer"
+                  onClick={() => setActiveTab(tab.value)}
+                  borderBottom="2px solid"
+                  borderColor={active ? 'red.400' : 'transparent'}
+                  color={active ? 'white' : 'gray.500'}
+                  fontSize="sm"
+                  fontWeight={active ? 'bold' : 'normal'}
+                  transition="all 0.15s"
+                  userSelect="none"
+                >
+                  {tab.icon} {tab.label}
+                </Box>
+              );
+            })}
+          </Flex>
         </Box>
       </Box>
 
-      {/* Body */}
-      <Flex flex={1} overflow={{ base: 'visible', md: 'hidden' }} maxW="1280px" mx="auto" w="100%" px={{ base: 4, md: 6 }}>
-
-        {/* Sidebar — hidden on mobile */}
-        <Box
-          display={{ base: 'none', md: 'block' }}
-          w="150px"
-          minW="150px"
-          py={8}
-          pr={6}
-          flexShrink={0}
-          overflowY="auto"
-          sx={{ '&::-webkit-scrollbar': { display: 'none' } }}
-        >
-          {!loading && dates.length > 0 && (
-            <>
-              <Text fontSize="2xs" fontWeight="bold" color="gray.400"
-                textTransform="uppercase" letterSpacing="widest" mb={4}>
-                Timeline
-              </Text>
-              <Box position="relative">
-                <Box
-                  position="absolute" left="5px" top="8px" bottom="8px"
-                  w="2px" bg="gray.100" borderRadius="full"
-                />
-                <VStack align="start" spacing={0} position="relative">
-                  {dates.map((date) => {
-                    const isActive = activeDate === date;
-                    const d = new Date(grouped[date][0].published_at);
-                    const shortDate = d.toLocaleDateString('en-MY', { day: 'numeric', month: 'short' });
-                    const year = d.getFullYear().toString();
-                    return (
-                      <Flex key={date} align="center" gap={3} py={2}
-                        cursor="pointer" w="100%" onClick={() => scrollToDate(date)} role="button">
-                        <Box
-                          w="12px" h="12px" borderRadius="full" flexShrink={0}
-                          bg={isActive ? 'red.500' : 'white'}
-                          borderWidth="2px"
-                          borderColor={isActive ? 'red.500' : 'gray.300'}
-                          transition="all 0.15s"
-                          zIndex={1}
-                        />
-                        <Box>
-                          <Text
-                            fontSize="xs"
-                            color={isActive ? 'red.600' : 'gray.500'}
-                            fontWeight={isActive ? 'bold' : 'normal'}
-                            lineHeight="1.2"
-                            _hover={{ color: 'red.500' }}
-                            transition="color 0.1s"
-                          >
-                            {shortDate}
-                          </Text>
-                          <Text fontSize="2xs" color="gray.400" lineHeight="1">{year}</Text>
-                        </Box>
-                      </Flex>
-                    );
-                  })}
+      {/* Feed */}
+      <Box maxW="600px" mx="auto" px={4} pb={16} pt={6}>
+        {isLoading ? (
+          <Center py={20}>
+            <VStack spacing={3}>
+              <Spinner size="lg" color="red.500" thickness="3px" />
+              <Text fontSize="sm" color="gray.400">Loading…</Text>
+            </VStack>
+          </Center>
+        ) : headlines.length === 0 ? (
+          <Center py={20}>
+            <VStack spacing={2}>
+              <Text fontSize="2xl">📭</Text>
+              <Text fontSize="sm" color="gray.500">No headlines yet</Text>
+            </VStack>
+          </Center>
+        ) : (
+          <VStack spacing={8} align="stretch">
+            {Object.entries(grouped).map(([date, items]) => (
+              <Box key={date} id={toSlug(date)}>
+                <Flex align="center" gap={3} mb={4}>
+                  <Divider borderColor="gray.200" />
+                  <Text
+                    fontSize="2xs" fontWeight="bold" color="gray.400"
+                    whiteSpace="nowrap" textTransform="uppercase" letterSpacing="widest"
+                    flexShrink={0}
+                  >
+                    {date}
+                  </Text>
+                  <Divider borderColor="gray.200" />
+                </Flex>
+                <VStack spacing={3} align="stretch">
+                  {items.map(h => <HeadlineCard key={h.id} headline={h} />)}
                 </VStack>
               </Box>
-            </>
+            ))}
+          </VStack>
+        )}
+
+        {/* Infinite scroll sentinel */}
+        <Box ref={sentinelRef} pt={8}>
+          {isFetchingNextPage && (
+            <Center><Spinner size="sm" color="gray.300" /></Center>
+          )}
+          {!hasNextPage && headlines.length > 0 && (
+            <Center>
+              <HStack spacing={3} color="gray.300">
+                <Divider w="50px" />
+                <Text fontSize="xs">you're all caught up</Text>
+                <Divider w="50px" />
+              </HStack>
+            </Center>
           )}
         </Box>
-
-        {/* Main content */}
-        <Box flex={1} overflowY={{ base: 'visible', md: 'auto' }} ref={scrollRef} minW={0}
-          sx={{ '&::-webkit-scrollbar': { width: '6px' }, '&::-webkit-scrollbar-thumb': { bg: 'gray.200', borderRadius: 'full' } }}>
-
-          {loading ? (
-            <Center py={24}>
-              <VStack spacing={4}>
-                <Spinner size="xl" color="red.500" thickness="3px" />
-                <Text color="gray.400" fontSize="sm">Loading headlines…</Text>
-              </VStack>
-            </Center>
-          ) : headlines.length === 0 ? (
-            <Center py={24}>
-              <VStack spacing={3}>
-                <Text fontSize="2xl">📭</Text>
-                <Text fontWeight="semibold" color="gray.600">No headlines yet</Text>
-                <Text color="gray.400" fontSize="sm">Run the job to fetch the latest news</Text>
-              </VStack>
-            </Center>
-          ) : (
-            <Box py={8} pr={2}>
-              <VStack spacing={12} align="stretch">
-                {Object.entries(grouped).map(([date, items]) => {
-                  const malaysia = items.filter(h => h.category === 'Malaysia');
-                  const international = items.filter(h => h.category === 'International');
-                  return (
-                    <Box key={date} id={toSlug(date)}>
-                      <Flex align="center" gap={4} mb={6}>
-                        <Divider borderColor="gray.200" />
-                        <Text
-                          fontSize="xs" fontWeight="bold" color="gray.500"
-                          whiteSpace="nowrap" textTransform="uppercase" letterSpacing="widest"
-                          flexShrink={0}
-                        >
-                          {date}
-                        </Text>
-                        <Divider borderColor="gray.200" />
-                      </Flex>
-
-                      <SimpleGrid columns={{ base: 1, md: 2 }} spacing={8}>
-                        <Box>
-                          <Flex align="center" justify="space-between"
-                            mb={4} pb={3} borderBottomWidth="2px" borderColor="blue.200">
-                            <HStack spacing={2}>
-                              <Text>🌍</Text>
-                              <Text fontSize="sm" fontWeight="bold" color="blue.600" letterSpacing="wide">
-                                International
-                              </Text>
-                            </HStack>
-                            <Badge colorScheme="blue" variant="subtle" borderRadius="full" fontSize="xs" px={2}>
-                              {international.length}
-                            </Badge>
-                          </Flex>
-                          <VStack spacing={4} align="stretch">
-                            {international.map(h => <HeadlineCard key={h.id} headline={h} />)}
-                            {international.length === 0 && (
-                              <Text fontSize="xs" color="gray.300" fontStyle="italic" py={4} textAlign="center">
-                                No international news this day
-                              </Text>
-                            )}
-                          </VStack>
-                        </Box>
-
-                        <Box>
-                          <Flex align="center" justify="space-between"
-                            mb={4} pb={3} borderBottomWidth="2px" borderColor="red.200">
-                            <HStack spacing={2}>
-                              <Text>🇲🇾</Text>
-                              <Text fontSize="sm" fontWeight="bold" color="red.600" letterSpacing="wide">
-                                Malaysia
-                              </Text>
-                            </HStack>
-                            <Badge colorScheme="red" variant="subtle" borderRadius="full" fontSize="xs" px={2}>
-                              {malaysia.length}
-                            </Badge>
-                          </Flex>
-                          <VStack spacing={4} align="stretch">
-                            {malaysia.map(h => <HeadlineCard key={h.id} headline={h} />)}
-                            {malaysia.length === 0 && (
-                              <Text fontSize="xs" color="gray.300" fontStyle="italic" py={4} textAlign="center">
-                                No local news this day
-                              </Text>
-                            )}
-                          </VStack>
-                        </Box>
-                      </SimpleGrid>
-                    </Box>
-                  );
-                })}
-              </VStack>
-
-              {hasMore && (
-                <Center mt={12}>
-                  <Button
-                    onClick={() => fetchHeadlines(headlines.length)}
-                    isLoading={loadingMore}
-                    loadingText="Loading…"
-                    colorScheme="red"
-                    variant="outline"
-                    size="md"
-                    borderRadius="full"
-                    px={8}
-                  >
-                    Load more
-                  </Button>
-                </Center>
-              )}
-
-              {!hasMore && headlines.length > 0 && (
-                <Center mt={12}>
-                  <HStack spacing={3} color="gray.300">
-                    <Divider w="60px" />
-                    <Text fontSize="xs">you've caught up</Text>
-                    <Divider w="60px" />
-                  </HStack>
-                </Center>
-              )}
-            </Box>
-          )}
-        </Box>
-      </Flex>
-    </Flex>
+      </Box>
+    </Box>
   );
 }

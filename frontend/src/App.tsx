@@ -72,17 +72,12 @@ export default function App() {
         <Container maxW="container.xl" py={5}>
           <Flex align="center" justify="space-between">
             <Box>
-              <HStack spacing={2} align="baseline">
-                <Heading
-                  size="lg" color="white" fontWeight="black"
-                  letterSpacing="-0.5px" fontFamily="'Georgia', serif"
-                >
-                  NewsLingo
-                </Heading>
-                <Text color="red.400" fontSize="xs" fontWeight="bold" letterSpacing="widest">
-                  BETA
-                </Text>
-              </HStack>
+              <Heading
+                size="lg" color="white" fontWeight="black"
+                letterSpacing="-0.5px" fontFamily="'Georgia', serif"
+              >
+                NewsLingo
+              </Heading>
               <Text color="gray.400" fontSize="xs" mt={1} letterSpacing="wide">
                 中英双语时事 · Malaysian news in Chinese & English
               </Text>

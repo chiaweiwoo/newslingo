@@ -3,8 +3,7 @@ name = "news-aggregator"
 version = "0.1.0"
 requires-python = ">=3.10,<3.14"
 dependencies = [
-    "feedparser==6.0.12",
     "supabase==2.29.0",
     "python-dotenv==1.2.2",
-    "google-genai>=1.75.0",
+    "anthropic>=0.40.0",
 ]

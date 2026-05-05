@@ -19,7 +19,7 @@ YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY')
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
-CHANNEL_ID = "UCURes72wqcEpid6EKNXWfxw"
+CHANNEL_ID = "UCURes72wqcEpid6EKNXWfxw"  # Astro 本地圈 (Malaysia)
 CLAUDE_BATCH_SIZE = 50
 
 SYSTEM_PROMPT = (

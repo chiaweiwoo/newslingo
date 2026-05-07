@@ -4,7 +4,7 @@
 
 A personal learning tool that aggregates Chinese-language news from Malaysian and Singaporean media, translates headlines into English, and classifies them by category — so you can read news you already understand while picking up the proper English terminology used in journalism.
 
-<img src="docs/screenshot.png" alt="NewsLingo mobile screenshot" width="320" />
+<img src="docs/screenshot.jpeg" alt="NewsLingo mobile screenshot" width="320" />
 
 ---
 

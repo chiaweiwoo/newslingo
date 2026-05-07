@@ -20,16 +20,20 @@ from scrapers import zaobao as zaobao_scraper
 
 load_dotenv(override=True)
 
-SUPABASE_URL        = os.getenv("SUPABASE_URL")
+SUPABASE_URL         = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
-ANTHROPIC_API_KEY   = os.getenv("ANTHROPIC_API_KEY")
-YOUTUBE_API_KEY     = os.getenv("YOUTUBE_API_KEY")
+ANTHROPIC_API_KEY    = os.getenv("ANTHROPIC_API_KEY")
+YOUTUBE_API_KEY      = os.getenv("YOUTUBE_API_KEY")
 
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 claude   = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
-CLAUDE_BATCH_SIZE = 50
-CLAUDE_MODEL = "claude-haiku-4-5-20251001"
+CLAUDE_BATCH_SIZE  = 50
+TRANSLATE_MODEL    = "claude-haiku-4-5-20251001"
+ASSESS_MODEL       = "claude-sonnet-4-6"
+DISTILL_MODEL      = "claude-sonnet-4-6"
+DISTILL_EVERY_N    = 10          # distill rules every N successful job runs
+ASSESS_PASS_SCORE  = 3           # score >= 3 passes, < 3 triggers retry
 
 # ── System prompts ────────────────────────────────────────────────────────────
 
@@ -147,31 +151,40 @@ ZAOBAO_SYSTEM_PROMPT = (
 ASSESS_SYSTEM_PROMPT = (
     "You are a Chinese-to-English translation quality assessor for news headlines.\n\n"
 
-    "For each numbered pair (ZH: Chinese | EN: English), assess the translation:\n\n"
+    "For each numbered pair (ZH: Chinese | EN: English), score the translation 1–5:\n"
+    "  5 — perfect: accurate meaning, natural English, correct proper nouns\n"
+    "  4 — good: minor style issues but fully accurate\n"
+    "  3 — acceptable: meaning intact, some awkwardness or minor omissions\n"
+    "  2 — poor: key facts or entities wrong/missing, broken grammar\n"
+    "  1 — unacceptable: wrong meaning or completely unreadable\n\n"
 
-    "Mark ok=TRUE when:\n"
-    "- Meaning is accurate — key facts, names, and events match the Chinese\n"
-    "- Translation reads naturally (not word-for-word literal)\n"
-    "- Grammar is acceptable (minor imperfections are fine)\n\n"
-
-    "Mark ok=FALSE only when:\n"
-    "- Wrong meaning — key facts are changed or lost\n"
-    "- Important named entities are mistranslated or missing\n"
-    "- Grammar is so broken the headline is unreadable\n\n"
-
-    "When ok=FALSE, you MUST also provide:\n"
+    "For scores 1–2, you MUST also provide:\n"
     "- \"reason\": one-line explanation of what is wrong\n"
     "- \"suggestion\": the correct English translation you would use instead\n\n"
 
     "Return ONLY a JSON array, one object per input, same order:\n"
-    "[{\"ok\": true}, {\"ok\": false, \"reason\": \"brief note\", \"suggestion\": \"corrected headline\"}, ...]\n"
+    "[{\"score\": 5}, {\"score\": 2, \"reason\": \"brief note\", \"suggestion\": \"corrected headline\"}, ...]\n"
+)
+
+DISTILL_SYSTEM_PROMPT = (
+    "You are a translation quality analyst. You will be given a list of Chinese news headline "
+    "translation failures, each with the bad translation and a corrected version.\n\n"
+
+    "Your task: extract 5–10 concise, actionable rules that would prevent these failures in future runs.\n\n"
+
+    "Rules must be:\n"
+    "- Specific and directive (e.g. 'Always use MACC for 反贪会, never anti-corruption body')\n"
+    "- Generalised from patterns, not just restating individual examples\n"
+    "- Focused on terminology, proper nouns, and structural issues — not style preferences\n\n"
+
+    "Return ONLY a JSON array of rule strings:\n"
+    "[\"rule 1\", \"rule 2\", ...]\n"
 )
 
 
 # ── DB helpers ────────────────────────────────────────────────────────────────
 
 def get_last_published_at(channel: str) -> datetime | None:
-    """Return the latest published_at for a specific channel, or None."""
     result = (
         supabase.table("headlines")
         .select("published_at")
@@ -186,10 +199,32 @@ def get_last_published_at(channel: str) -> datetime | None:
     return None
 
 
-# ── Dynamic prompt ────────────────────────────────────────────────────────────
+def _get_successful_run_count() -> int:
+    result = (
+        supabase.table("job_runs")
+        .select("id", count="exact")
+        .eq("status", "success")
+        .execute()
+    )
+    return result.count or 0
+
+
+# ── Prompt construction ───────────────────────────────────────────────────────
+
+def _load_prompt_rules(source: str) -> str:
+    result = (
+        supabase.table("prompt_rules")
+        .select("rules")
+        .eq("source", source)
+        .eq("active", True)
+        .order("generated_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    return result.data[0]["rules"] if result.data else ""
+
 
 def _load_failure_examples(source: str, limit: int = 8) -> list[dict]:
-    """Fetch recent failure samples from assessment_logs to inject into prompt."""
     result = (
         supabase.table("assessment_logs")
         .select("sample_failures")
@@ -207,25 +242,30 @@ def _load_failure_examples(source: str, limit: int = 8) -> list[dict]:
     return examples[:limit]
 
 
-def _inject_failures(base_prompt: str, failures: list[dict]) -> str:
-    if not failures:
-        return base_prompt
-    # Only use examples where we have a corrected suggestion
-    examples = [f for f in failures if f.get("suggestion")]
-    if not examples:
-        return base_prompt
-    block = "\n".join(
-        f"- ZH: {f['zh']}\n  Correct EN: {f['suggestion']}"
-        for f in examples
-    )
-    return base_prompt + f"\n\nFEW-SHOT CORRECTIONS — use these as translation references:\n{block}\n"
+def _build_prompt(source: str, base_prompt: str) -> str:
+    """Assemble final prompt: static base + distilled rules + few-shot corrections."""
+    prompt = base_prompt
+
+    rules = _load_prompt_rules(source)
+    if rules:
+        prompt += f"\n\nDISTILLED RULES (learned from past failures — follow strictly):\n{rules}\n"
+
+    examples = [f for f in _load_failure_examples(source) if f.get("suggestion")]
+    if examples:
+        block = "\n".join(
+            f"- ZH: {f['zh']}\n  Correct EN: {f['suggestion']}"
+            for f in examples
+        )
+        prompt += f"\n\nFEW-SHOT CORRECTIONS — use these as translation references:\n{block}\n"
+
+    return prompt
 
 
 # ── Translation ───────────────────────────────────────────────────────────────
 
-def _call_claude(system: str, content: str) -> list[dict]:
+def _call_claude(model: str, system: str, content: str) -> list[dict]:
     msg = claude.messages.create(
-        model=CLAUDE_MODEL,
+        model=model,
         max_tokens=4096,
         system=system,
         messages=[{"role": "user", "content": content}],
@@ -240,7 +280,7 @@ def translate_zaobao(rows: list[dict], prompt: str) -> list[dict]:
     for i in range(0, len(rows), CLAUDE_BATCH_SIZE):
         batch = rows[i:i + CLAUDE_BATCH_SIZE]
         numbered = "\n".join(f"{j+1}. {r['title_zh']}" for j, r in enumerate(batch))
-        results = _call_claude(prompt, f"Translate these headlines:\n{numbered}")
+        results = _call_claude(TRANSLATE_MODEL, prompt, f"Translate these headlines:\n{numbered}")
         for j, t in enumerate(results):
             rows[i + j]["title_en"] = t["title_en"]
             rows[i + j]["category"] = t["category"]
@@ -252,7 +292,7 @@ def translate_astro(rows: list[dict], prompt: str) -> list[dict]:
     for i in range(0, len(rows), CLAUDE_BATCH_SIZE):
         batch = rows[i:i + CLAUDE_BATCH_SIZE]
         numbered = "\n".join(f"{j+1}. {r['title_zh']}" for j, r in enumerate(batch))
-        results = _call_claude(prompt, f"Translate these headlines:\n{numbered}")
+        results = _call_claude(TRANSLATE_MODEL, prompt, f"Translate these headlines:\n{numbered}")
         for j, t in enumerate(results):
             rows[i + j]["title_en"] = t["title_en"]
             rows[i + j]["category"] = t["category"]
@@ -260,19 +300,21 @@ def translate_astro(rows: list[dict], prompt: str) -> list[dict]:
     return rows
 
 
-def assess_translations(rows: list[dict], source: str) -> tuple[list[dict], list[dict], list[dict]]:
-    """Assess translation quality. Returns (passed, failed, failure_samples)."""
-    passed, failed, failure_samples = [], [], []
+def assess_translations(rows: list[dict], source: str) -> tuple[list[dict], list[dict], list[dict], float]:
+    """Assess translation quality. Returns (passed, failed, failure_samples, avg_score)."""
+    passed, failed, failure_samples, scores = [], [], [], []
     for i in range(0, len(rows), CLAUDE_BATCH_SIZE):
         batch = rows[i:i + CLAUDE_BATCH_SIZE]
         numbered = "\n".join(
             f"{j+1}. ZH: {r['title_zh']} | EN: {r['title_en']}"
             for j, r in enumerate(batch)
         )
-        results = _call_claude(ASSESS_SYSTEM_PROMPT, f"Assess these translations:\n{numbered}")
+        results = _call_claude(ASSESS_MODEL, ASSESS_SYSTEM_PROMPT, f"Assess these translations:\n{numbered}")
         for j, result in enumerate(results):
             row = batch[j]
-            if result.get("ok", True):
+            score = result.get("score", 3)
+            scores.append(score)
+            if score >= ASSESS_PASS_SCORE:
                 passed.append(row)
             else:
                 failed.append(row)
@@ -280,18 +322,20 @@ def assess_translations(rows: list[dict], source: str) -> tuple[list[dict], list
                     failure_samples.append({
                         "zh":         row["title_zh"],
                         "en":         row.get("title_en", ""),
+                        "score":      score,
                         "reason":     result.get("reason", ""),
                         "suggestion": result.get("suggestion", ""),
                     })
                 print(
-                    f"  [{source}] ASSESS FAIL: {row['title_zh'][:30]} → "
+                    f"  [{source}] ASSESS FAIL (score={score}): {row['title_zh'][:30]} → "
                     f"{(row.get('title_en') or '')[:40]} | {result.get('reason', '')}",
                     flush=True,
                 )
-        batch_passed = sum(1 for r in results if r.get("ok", True))
+        batch_passed = sum(1 for r in results if r.get("score", 3) >= ASSESS_PASS_SCORE)
         print(f"[{source}] assessed batch {i // CLAUDE_BATCH_SIZE + 1}: {batch_passed}/{len(batch)} passed", flush=True)
-    print(f"[{source}] assessment: {len(passed)} passed, {len(failed)} failed", flush=True)
-    return passed, failed, failure_samples
+    avg_score = round(sum(scores) / len(scores), 2) if scores else 0.0
+    print(f"[{source}] assessment: {len(passed)} passed, {len(failed)} failed, avg_score={avg_score}", flush=True)
+    return passed, failed, failure_samples, avg_score
 
 
 def _log_assessment(
@@ -300,24 +344,72 @@ def _log_assessment(
     passed: int,
     retried: int,
     passed_after_retry: int,
-    dropped: int,
+    still_failing: int,
     failure_samples: list[dict],
+    avg_score: float,
 ) -> None:
     supabase.table("assessment_logs").insert({
         "source":              source,
-        "model":               CLAUDE_MODEL,
+        "model":               ASSESS_MODEL,
         "total_assessed":      total,
         "passed":              passed,
         "retried":             retried,
         "passed_after_retry":  passed_after_retry,
-        "dropped":             dropped,
+        "dropped":             still_failing,
         "sample_failures":     failure_samples or None,
+        "avg_score":           avg_score,
     }).execute()
     print(
         f"[{source}] logged assessment: total={total} passed={passed} "
-        f"retried={retried} rescued={passed_after_retry} dropped={dropped}",
+        f"retried={retried} rescued={passed_after_retry} still_failing={still_failing} avg_score={avg_score}",
         flush=True,
     )
+
+
+# ── Distillation ──────────────────────────────────────────────────────────────
+
+def _replace_prompt_rules(source: str, rules: list[str], run_count: int) -> None:
+    supabase.table("prompt_rules").update({"active": False}).eq("source", source).execute()
+    rules_text = "\n".join(f"- {r}" for r in rules)
+    supabase.table("prompt_rules").insert({
+        "source":       source,
+        "rules":        rules_text,
+        "run_count_at": run_count,
+        "active":       True,
+    }).execute()
+    print(f"[{source}] prompt_rules updated ({len(rules)} rules)", flush=True)
+
+
+def _distill_rules(source: str, run_count: int) -> None:
+    print(f"[{source}] distilling rules from assessment history...", flush=True)
+    result = (
+        supabase.table("assessment_logs")
+        .select("sample_failures")
+        .eq("source", source)
+        .not_.is_("sample_failures", "null")
+        .order("ran_at", desc=True)
+        .limit(50)
+        .execute()
+    )
+    all_failures: list[dict] = []
+    for row in result.data:
+        all_failures.extend(row["sample_failures"] or [])
+
+    actionable = [f for f in all_failures if f.get("suggestion")]
+    if not actionable:
+        print(f"[{source}] no actionable failures for distillation, skipping", flush=True)
+        return
+
+    numbered = "\n".join(
+        f"{i+1}. ZH: {f['zh']}\n   Bad EN: {f['en']}\n   Correct EN: {f['suggestion']}\n   Reason: {f.get('reason', '')}"
+        for i, f in enumerate(actionable[:60])
+    )
+    rules = _call_claude(
+        DISTILL_MODEL,
+        DISTILL_SYSTEM_PROMPT,
+        f"Extract translation rules from these failures:\n{numbered}",
+    )
+    _replace_prompt_rules(source, rules, run_count)
 
 
 # ── Upsert ────────────────────────────────────────────────────────────────────
@@ -339,34 +431,35 @@ items_found = 0
 items_processed = 0
 status = "success"
 error_msg = None
+sources_processed = []
 
 try:
+    zaobao_prompt = _build_prompt("zaobao", ZAOBAO_SYSTEM_PROMPT)
+    astro_prompt  = _build_prompt("astro",  ASTRO_SYSTEM_PROMPT)
+
     # ── Zaobao ────────────────────────────────────────────────────────────────
     zaobao_since = get_last_published_at(zaobao_scraper.CHANNEL)
     print(f"[zaobao] since_dt = {zaobao_since}", flush=True)
     zaobao_rows = zaobao_scraper.scrape(zaobao_since)
 
-    # Load dynamic prompts enriched with recent failure examples
-    zaobao_prompt = _inject_failures(ZAOBAO_SYSTEM_PROMPT, _load_failure_examples("zaobao"))
-    astro_prompt  = _inject_failures(ASTRO_SYSTEM_PROMPT,  _load_failure_examples("astro"))
-
     if zaobao_rows:
+        sources_processed.append("zaobao")
         zaobao_rows = translate_zaobao(zaobao_rows, zaobao_prompt)
-        zaobao_rows, z_failed, z_samples = assess_translations(zaobao_rows, "zaobao")
+        zaobao_rows, z_failed, z_samples, z_avg = assess_translations(zaobao_rows, "zaobao")
         z_retried = len(z_failed)
         z_rescued, z_still_failing = 0, 0
         if z_failed:
             print(f"[zaobao] retrying {z_retried} failed translations...", flush=True)
             z_failed = translate_zaobao(z_failed, zaobao_prompt)
-            z_retry_passed, z_remaining, z_retry_samples = assess_translations(z_failed, "zaobao-retry")
+            z_retry_passed, z_remaining, z_retry_samples, _ = assess_translations(z_failed, "zaobao-retry")
             zaobao_rows.extend(z_retry_passed)
-            zaobao_rows.extend(z_remaining)   # upsert all — never drop
+            zaobao_rows.extend(z_remaining)
             z_rescued = len(z_retry_passed)
             z_still_failing = len(z_remaining)
             z_samples.extend(z_retry_samples)
             if z_still_failing:
                 print(f"[zaobao] {z_still_failing} inserted despite failing assessment (logged)", flush=True)
-        _log_assessment("zaobao", len(zaobao_rows), len(zaobao_rows) - z_still_failing, z_retried, z_rescued, z_still_failing, z_samples)
+        _log_assessment("zaobao", len(zaobao_rows), len(zaobao_rows) - z_still_failing, z_retried, z_rescued, z_still_failing, z_samples, z_avg)
         upsert_rows(zaobao_rows)
 
     # ── Astro ─────────────────────────────────────────────────────────────────
@@ -376,22 +469,23 @@ try:
     astro_rows = astro_scraper.scrape(astro_since, YOUTUBE_API_KEY)
 
     if astro_rows:
+        sources_processed.append("astro")
         astro_rows = translate_astro(astro_rows, astro_prompt)
-        astro_rows, a_failed, a_samples = assess_translations(astro_rows, "astro")
+        astro_rows, a_failed, a_samples, a_avg = assess_translations(astro_rows, "astro")
         a_retried = len(a_failed)
         a_rescued, a_still_failing = 0, 0
         if a_failed:
             print(f"[astro] retrying {a_retried} failed translations...", flush=True)
             a_failed = translate_astro(a_failed, astro_prompt)
-            a_retry_passed, a_remaining, a_retry_samples = assess_translations(a_failed, "astro-retry")
+            a_retry_passed, a_remaining, a_retry_samples, _ = assess_translations(a_failed, "astro-retry")
             astro_rows.extend(a_retry_passed)
-            astro_rows.extend(a_remaining)    # upsert all — never drop
+            astro_rows.extend(a_remaining)
             a_rescued = len(a_retry_passed)
             a_still_failing = len(a_remaining)
             a_samples.extend(a_retry_samples)
             if a_still_failing:
                 print(f"[astro] {a_still_failing} inserted despite failing assessment (logged)", flush=True)
-        _log_assessment("astro", len(astro_rows), len(astro_rows) - a_still_failing, a_retried, a_rescued, a_still_failing, a_samples)
+        _log_assessment("astro", len(astro_rows), len(astro_rows) - a_still_failing, a_retried, a_rescued, a_still_failing, a_samples, a_avg)
         upsert_rows(astro_rows)
 
     items_found     = len(zaobao_rows) + len(astro_rows)
@@ -406,13 +500,24 @@ except Exception as e:
 finally:
     duration = round(time.time() - start_time, 2)
     supabase.table("job_runs").insert({
-        "items_found":     items_found,
-        "items_processed": items_processed,
-        "status":          status,
-        "error_msg":       error_msg,
+        "items_found":      items_found,
+        "items_processed":  items_processed,
+        "status":           status,
+        "error_msg":        error_msg,
         "duration_seconds": duration,
     }).execute()
     print(
         f"Done: {status} | found={items_found} processed={items_processed} duration={duration}s",
         flush=True,
     )
+
+    # ── Distillation (every N successful runs, per source that processed rows) ─
+    if status == "success" and sources_processed:
+        run_count = _get_successful_run_count()
+        if run_count % DISTILL_EVERY_N == 0:
+            print(f"[distill] run #{run_count} — triggering rule distillation...", flush=True)
+            for src in sources_processed:
+                try:
+                    _distill_rules(src, run_count)
+                except Exception as e:
+                    print(f"[distill] {src} failed: {e}", flush=True)

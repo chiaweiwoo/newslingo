@@ -220,9 +220,9 @@ def translate_astro(rows: list[dict]) -> list[dict]:
     return rows
 
 
-def assess_translations(rows: list[dict], source: str) -> list[dict]:
-    """Filter rows whose translation fails quality assessment."""
-    passed, failed_count = [], 0
+def assess_translations(rows: list[dict], source: str) -> tuple[list[dict], list[dict]]:
+    """Assess translation quality. Returns (passed, failed)."""
+    passed, failed = [], []
     for i in range(0, len(rows), CLAUDE_BATCH_SIZE):
         batch = rows[i:i + CLAUDE_BATCH_SIZE]
         numbered = "\n".join(
@@ -235,7 +235,7 @@ def assess_translations(rows: list[dict], source: str) -> list[dict]:
             if result.get("ok", True):
                 passed.append(row)
             else:
-                failed_count += 1
+                failed.append(row)
                 print(
                     f"  [{source}] ASSESS FAIL: {row['title_zh'][:30]} → "
                     f"{(row.get('title_en') or '')[:40]} | {result.get('reason', '')}",
@@ -243,8 +243,8 @@ def assess_translations(rows: list[dict], source: str) -> list[dict]:
                 )
         batch_passed = sum(1 for r in results if r.get("ok", True))
         print(f"[{source}] assessed batch {i // CLAUDE_BATCH_SIZE + 1}: {batch_passed}/{len(batch)} passed", flush=True)
-    print(f"[{source}] assessment: {len(passed)} passed, {failed_count} rejected", flush=True)
-    return passed
+    print(f"[{source}] assessment: {len(passed)} passed, {len(failed)} failed", flush=True)
+    return passed, failed
 
 
 # ── Upsert ────────────────────────────────────────────────────────────────────
@@ -275,7 +275,14 @@ try:
 
     if zaobao_rows:
         zaobao_rows = translate_zaobao(zaobao_rows)
-        zaobao_rows = assess_translations(zaobao_rows, "zaobao")
+        zaobao_rows, z_failed = assess_translations(zaobao_rows, "zaobao")
+        if z_failed:
+            print(f"[zaobao] retrying {len(z_failed)} failed translations...", flush=True)
+            z_failed = translate_zaobao(z_failed)
+            z_retry_passed, z_dropped = assess_translations(z_failed, "zaobao-retry")
+            zaobao_rows.extend(z_retry_passed)
+            if z_dropped:
+                print(f"[zaobao] dropped {len(z_dropped)} after retry", flush=True)
         upsert_rows(zaobao_rows)
 
     # ── Astro ─────────────────────────────────────────────────────────────────
@@ -286,7 +293,14 @@ try:
 
     if astro_rows:
         astro_rows = translate_astro(astro_rows)
-        astro_rows = assess_translations(astro_rows, "astro")
+        astro_rows, a_failed = assess_translations(astro_rows, "astro")
+        if a_failed:
+            print(f"[astro] retrying {len(a_failed)} failed translations...", flush=True)
+            a_failed = translate_astro(a_failed)
+            a_retry_passed, a_dropped = assess_translations(a_failed, "astro-retry")
+            astro_rows.extend(a_retry_passed)
+            if a_dropped:
+                print(f"[astro] dropped {len(a_dropped)} after retry", flush=True)
         upsert_rows(astro_rows)
 
     items_found     = len(zaobao_rows) + len(astro_rows)

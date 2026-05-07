@@ -63,14 +63,15 @@ def scrape(since_dt: datetime | None) -> list[dict]:
 
     # Build rows in original sitemap order (newest first)
     rows = []
-    skipped = 0
+    skip_no_title, skip_audio = 0, 0
     for url, lastmod in entries:
         title_zh, thumbnail_url = meta.get(url, (None, None))
         if title_zh is None:
-            skipped += 1
+            skip_no_title += 1
+            print(f"[zaobao] skip (no title): {url}", flush=True)
             continue
         if _AUDIO_BRIEF_RE.search(title_zh):
-            skipped += 1
+            skip_audio += 1
             continue
         rows.append({
             "id":            _make_id(url),
@@ -83,7 +84,7 @@ def scrape(since_dt: datetime | None) -> list[dict]:
             "source_url":    url,
         })
 
-    print(f"[zaobao] {len(rows)} rows ready ({skipped} skipped)", flush=True)
+    print(f"[zaobao] {len(rows)} rows ready | skipped: {skip_audio} audio briefs, {skip_no_title} fetch failures", flush=True)
     return rows
 
 

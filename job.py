@@ -93,8 +93,14 @@ ASTRO_SYSTEM_PROMPT = (
 )
 
 ZAOBAO_SYSTEM_PROMPT = (
-    "You are an expert Singapore news translator. "
-    "Translate each Chinese headline into clear Singapore English.\n\n"
+    "You are an expert Singapore news translator and classifier. For each headline:\n"
+    "1. Translate from Chinese to Singapore English\n"
+    "2. Classify as 'Singapore' (local SG news) or 'International' (foreign/world news)\n\n"
+
+    "CLASSIFICATION RULES:\n"
+    "- 'Singapore': news about Singapore politics, people, places, companies, courts, or events\n"
+    "- 'International': news about other countries, world leaders, global events, foreign incidents\n"
+    "- When in doubt (e.g. Singapore reaction to world event): classify by WHERE the event happened\n\n"
 
     "POLITICAL TITLES:\n"
     "- 总理 → Prime Minister\n"
@@ -132,8 +138,28 @@ ZAOBAO_SYSTEM_PROMPT = (
     "STYLE: Singapore English, concise headlines, keep proper nouns.\n\n"
 
     "Return ONLY a JSON array, one object per input line, same order.\n"
-    "Each object has exactly one key: \"title_en\".\n"
-    "Example: [{\"title_en\": \"PM meets President\"}, {\"title_en\": \"HDB launches new flats\"}]"
+    "Each object must have exactly two keys: \"title_en\" and \"category\".\n"
+    "Example: [{\"title_en\": \"PM meets President\", \"category\": \"Singapore\"}, "
+    "{\"title_en\": \"Trump signs bill\", \"category\": \"International\"}]"
+)
+
+ASSESS_SYSTEM_PROMPT = (
+    "You are a Chinese-to-English translation quality assessor for news headlines.\n\n"
+
+    "For each numbered pair (ZH: Chinese | EN: English), assess the translation:\n\n"
+
+    "Mark ok=TRUE when:\n"
+    "- Meaning is accurate — key facts, names, and events match the Chinese\n"
+    "- Translation reads naturally (not word-for-word literal)\n"
+    "- Grammar is acceptable (minor imperfections are fine)\n\n"
+
+    "Mark ok=FALSE only when:\n"
+    "- Wrong meaning — key facts are changed or lost\n"
+    "- Important named entities are mistranslated or missing\n"
+    "- Grammar is so broken the headline is unreadable\n\n"
+
+    "Return ONLY a JSON array, one object per input, same order:\n"
+    "[{\"ok\": true}, {\"ok\": false, \"reason\": \"brief note\"}, ...]\n"
 )
 
 
@@ -157,12 +183,12 @@ def get_last_published_at(channel: str) -> datetime | None:
 
 # ── Translation ───────────────────────────────────────────────────────────────
 
-def _call_claude(system: str, numbered: str) -> list[dict]:
+def _call_claude(system: str, content: str) -> list[dict]:
     msg = claude.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=4096,
         system=system,
-        messages=[{"role": "user", "content": f"Translate these headlines:\n{numbered}"}],
+        messages=[{"role": "user", "content": content}],
     )
     raw = msg.content[0].text.strip()
     raw = re.sub(r"^```(?:json)?\s*", "", raw)
@@ -174,9 +200,10 @@ def translate_zaobao(rows: list[dict]) -> list[dict]:
     for i in range(0, len(rows), CLAUDE_BATCH_SIZE):
         batch = rows[i:i + CLAUDE_BATCH_SIZE]
         numbered = "\n".join(f"{j+1}. {r['title_zh']}" for j, r in enumerate(batch))
-        results = _call_claude(ZAOBAO_SYSTEM_PROMPT, numbered)
+        results = _call_claude(ZAOBAO_SYSTEM_PROMPT, f"Translate these headlines:\n{numbered}")
         for j, t in enumerate(results):
             rows[i + j]["title_en"] = t["title_en"]
+            rows[i + j]["category"] = t["category"]
         print(f"[zaobao] translated batch {i // CLAUDE_BATCH_SIZE + 1} ({len(batch)} items)", flush=True)
     return rows
 
@@ -185,7 +212,7 @@ def translate_astro(rows: list[dict]) -> list[dict]:
     for i in range(0, len(rows), CLAUDE_BATCH_SIZE):
         batch = rows[i:i + CLAUDE_BATCH_SIZE]
         numbered = "\n".join(f"{j+1}. {r['title_zh']}" for j, r in enumerate(batch))
-        results = _call_claude(ASTRO_SYSTEM_PROMPT, numbered)
+        results = _call_claude(ASTRO_SYSTEM_PROMPT, f"Translate these headlines:\n{numbered}")
         for j, t in enumerate(results):
             rows[i + j]["title_en"] = t["title_en"]
             rows[i + j]["category"] = t["category"]
@@ -193,13 +220,40 @@ def translate_astro(rows: list[dict]) -> list[dict]:
     return rows
 
 
+def assess_translations(rows: list[dict], source: str) -> list[dict]:
+    """Filter rows whose translation fails quality assessment."""
+    passed, failed_count = [], 0
+    for i in range(0, len(rows), CLAUDE_BATCH_SIZE):
+        batch = rows[i:i + CLAUDE_BATCH_SIZE]
+        numbered = "\n".join(
+            f"{j+1}. ZH: {r['title_zh']} | EN: {r['title_en']}"
+            for j, r in enumerate(batch)
+        )
+        results = _call_claude(ASSESS_SYSTEM_PROMPT, f"Assess these translations:\n{numbered}")
+        for j, result in enumerate(results):
+            row = batch[j]
+            if result.get("ok", True):
+                passed.append(row)
+            else:
+                failed_count += 1
+                print(
+                    f"  [{source}] ASSESS FAIL: {row['title_zh'][:30]} → "
+                    f"{(row.get('title_en') or '')[:40]} | {result.get('reason', '')}",
+                    flush=True,
+                )
+        batch_passed = sum(1 for r in results if r.get("ok", True))
+        print(f"[{source}] assessed batch {i // CLAUDE_BATCH_SIZE + 1}: {batch_passed}/{len(batch)} passed", flush=True)
+    print(f"[{source}] assessment: {len(passed)} passed, {failed_count} rejected", flush=True)
+    return passed
+
+
 # ── Upsert ────────────────────────────────────────────────────────────────────
 
 def upsert_rows(rows: list[dict]) -> None:
     for row in rows:
-        supabase.table("headlines").upsert(row, on_conflict="id").execute()
+        supabase.table("headlines").upsert(row, on_conflict="source_url").execute()
         print(
-            f"  [{row.get('category', 'SG')}] {row['id']} | "
+            f"  [{row.get('category', '?')}] {row['source_url'].split('/')[-1][:20]} | "
             f"{row['title_zh'][:30]}... → {(row.get('title_en') or '')[:40]}...",
             flush=True,
         )
@@ -221,6 +275,7 @@ try:
 
     if zaobao_rows:
         zaobao_rows = translate_zaobao(zaobao_rows)
+        zaobao_rows = assess_translations(zaobao_rows, "zaobao")
         upsert_rows(zaobao_rows)
 
     # ── Astro ─────────────────────────────────────────────────────────────────
@@ -231,6 +286,7 @@ try:
 
     if astro_rows:
         astro_rows = translate_astro(astro_rows)
+        astro_rows = assess_translations(astro_rows, "astro")
         upsert_rows(astro_rows)
 
     items_found     = len(zaobao_rows) + len(astro_rows)

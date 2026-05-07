@@ -66,7 +66,7 @@ def scrape(since_dt: datetime | None) -> list[dict]:
             "thumbnail_url": thumbnail_url,
             "published_at":  lastmod,
             "channel":       CHANNEL,
-            "category":      CATEGORY,
+            "category":      None,          # filled by job.py translate step
             "source_url":    url,
         })
         if i % 10 == 0:

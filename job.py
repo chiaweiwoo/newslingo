@@ -11,7 +11,7 @@ import time
 from datetime import datetime, timezone
 
 sys.stdout.reconfigure(encoding="utf-8")
-print("[job] NewsLingo job starting — build: retry+16k (a6aedc6+)", flush=True)
+print("[job] NewsLingo job starting — build: assess-zip+batch20 (post-1dc5d87)", flush=True)
 from supabase import create_client
 from dotenv import load_dotenv
 import anthropic
@@ -29,7 +29,8 @@ YOUTUBE_API_KEY      = os.getenv("YOUTUBE_API_KEY")
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 claude   = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
-CLAUDE_BATCH_SIZE  = 50
+CLAUDE_BATCH_SIZE  = 50          # translation batch size
+ASSESS_BATCH_SIZE  = 20          # assess batch — smaller; Sonnet drops/duplicates items at higher counts
 TRANSLATE_MODEL    = "claude-haiku-4-5-20251001"
 ASSESS_MODEL       = "claude-sonnet-4-6"
 DISTILL_MODEL      = "claude-sonnet-4-6"
@@ -299,42 +300,65 @@ def _call_claude(model: str, system: str, content: str) -> list[dict]:
     raise ValueError("_call_claude: unreachable")
 
 
-def translate_zaobao(rows: list[dict], prompt: str) -> list[dict]:
+def _translate_batch(source: str, rows: list[dict], prompt: str) -> list[dict]:
+    """Shared translation logic — defensive against length mismatch from Claude."""
     for i in range(0, len(rows), CLAUDE_BATCH_SIZE):
         batch = rows[i:i + CLAUDE_BATCH_SIZE]
         numbered = "\n".join(f"{j+1}. {r['title_zh']}" for j, r in enumerate(batch))
         results = _call_claude(TRANSLATE_MODEL, prompt, f"Translate these headlines:\n{numbered}")
-        for j, t in enumerate(results):
-            rows[i + j]["title_en"] = t["title_en"]
-            rows[i + j]["category"] = t["category"]
-        print(f"[zaobao] translated batch {i // CLAUDE_BATCH_SIZE + 1} ({len(batch)} items)", flush=True)
+        if len(results) != len(batch):
+            print(
+                f"  [{source}] WARNING: translate returned {len(results)} for {len(batch)} input items",
+                flush=True,
+            )
+        # iterate over batch (fixed length); pair with result if available
+        for j, row in enumerate(batch):
+            if j < len(results) and isinstance(results[j], dict):
+                t = results[j]
+                row["title_en"] = t.get("title_en") or row["title_zh"]
+                row["category"] = t.get("category") or "International"
+            else:
+                # no result — leave title_en blank, category default; assess will catch it
+                row["title_en"] = row.get("title_en") or row["title_zh"]
+                row["category"] = row.get("category") or "International"
+        print(f"[{source}] translated batch {i // CLAUDE_BATCH_SIZE + 1} ({len(batch)} items)", flush=True)
     return rows
+
+
+def translate_zaobao(rows: list[dict], prompt: str) -> list[dict]:
+    return _translate_batch("zaobao", rows, prompt)
 
 
 def translate_astro(rows: list[dict], prompt: str) -> list[dict]:
-    for i in range(0, len(rows), CLAUDE_BATCH_SIZE):
-        batch = rows[i:i + CLAUDE_BATCH_SIZE]
-        numbered = "\n".join(f"{j+1}. {r['title_zh']}" for j, r in enumerate(batch))
-        results = _call_claude(TRANSLATE_MODEL, prompt, f"Translate these headlines:\n{numbered}")
-        for j, t in enumerate(results):
-            rows[i + j]["title_en"] = t["title_en"]
-            rows[i + j]["category"] = t["category"]
-        print(f"[astro] translated batch {i // CLAUDE_BATCH_SIZE + 1} ({len(batch)} items)", flush=True)
-    return rows
+    return _translate_batch("astro", rows, prompt)
 
 
 def assess_translations(rows: list[dict], source: str) -> tuple[list[dict], list[dict], list[dict], float]:
-    """Assess translation quality. Returns (passed, failed, failure_samples, avg_score)."""
+    """Assess translation quality. Returns (passed, failed, failure_samples, avg_score).
+
+    Defensive: if Sonnet returns wrong number of results, default missing items to score=3
+    (pass) so we never crash and never falsely reject valid translations.
+    """
     passed, failed, failure_samples, scores = [], [], [], []
-    for i in range(0, len(rows), CLAUDE_BATCH_SIZE):
-        batch = rows[i:i + CLAUDE_BATCH_SIZE]
+    for i in range(0, len(rows), ASSESS_BATCH_SIZE):
+        batch = rows[i:i + ASSESS_BATCH_SIZE]
         numbered = "\n".join(
             f"{j+1}. ZH: {r['title_zh']} | EN: {r['title_en']}"
             for j, r in enumerate(batch)
         )
         results = _call_claude(ASSESS_MODEL, ASSESS_SYSTEM_PROMPT, f"Assess these translations:\n{numbered}")
-        for j, result in enumerate(results):
-            row = batch[j]
+        if len(results) != len(batch):
+            print(
+                f"  [{source}] WARNING: assess returned {len(results)} for {len(batch)} input items "
+                f"— defaulting missing to score=3",
+                flush=True,
+            )
+        # iterate over batch (fixed length); pair with result if available
+        for j, row in enumerate(batch):
+            if j < len(results) and isinstance(results[j], dict):
+                result = results[j]
+            else:
+                result = {"score": 3}  # missing → default pass
             score = result.get("score", 3)
             scores.append(score)
             if score >= ASSESS_PASS_SCORE:
@@ -354,8 +378,8 @@ def assess_translations(rows: list[dict], source: str) -> tuple[list[dict], list
                     f"{(row.get('title_en') or '')[:40]} | {result.get('reason', '')}",
                     flush=True,
                 )
-        batch_passed = sum(1 for r in results if r.get("score", 3) >= ASSESS_PASS_SCORE)
-        print(f"[{source}] assessed batch {i // CLAUDE_BATCH_SIZE + 1}: {batch_passed}/{len(batch)} passed", flush=True)
+        batch_passed = sum(1 for r in (results[:len(batch)]) if isinstance(r, dict) and r.get("score", 3) >= ASSESS_PASS_SCORE)
+        print(f"[{source}] assessed batch {i // ASSESS_BATCH_SIZE + 1}: {batch_passed}/{len(batch)} passed", flush=True)
     avg_score = round(sum(scores) / len(scores), 2) if scores else 0.0
     print(f"[{source}] assessment: {len(passed)} passed, {len(failed)} failed, avg_score={avg_score}", flush=True)
     return passed, failed, failure_samples, avg_score

@@ -11,6 +11,7 @@ import time
 from datetime import datetime, timezone
 
 sys.stdout.reconfigure(encoding="utf-8")
+print("[job] NewsLingo job starting — build: retry+16k (a6aedc6+)", flush=True)
 from supabase import create_client
 from dotenv import load_dotenv
 import anthropic

@@ -103,7 +103,42 @@ Assessment results are logged to `assessment_logs` with avg quality score per ru
 
 ## Sources
 
-| Channel | Country | Categories |
-|---------|---------|------------|
-| Astro 本地圈 | Malaysia | Malaysia / International |
-| 联合早报 | Singapore | Singapore / International |
+| Channel | Country | Categories | Classification |
+|---------|---------|------------|----------------|
+| Astro 本地圈 | Malaysia | Malaysia / International | LLM (Haiku) |
+| 联合早报 | Singapore | Singapore / International | URL-based, deterministic — see [CLAUDE.md](./CLAUDE.md) |
+
+Zaobao categories come from the source URL section (`/news/singapore/`, `/news/world/`, `/news/china/`, `/news/sea/`) — never from the LLM. This is a hard invariant enforced by runtime assertions and CI tests.
+
+---
+
+## Testing
+
+The project has a pytest suite that runs on every push to `main` via GitHub Actions. The scheduled job is **gated on tests passing** — broken code never reaches production.
+
+```bash
+uv sync --group dev
+uv run pytest -v             # all 56 tests
+uv run pytest tests/test_invariants.py  # invariant checks only
+```
+
+| Test file | What it covers |
+|---|---|
+| `test_zaobao_scraper.py` | URL→category mapping, sitemap regex (4 sections, excludes sports), audio-brief filter |
+| `test_astro_scraper.py` | YouTube JSON → row schema, title cleaning, lookback window |
+| `test_call_claude.py` | `_call_claude` with mocked Anthropic responses: clean JSON, code-fenced, truncated, prose-wrapped, length mismatch, prefill on/off |
+| `test_invariants.py` | Architectural invariants: Zaobao classification is URL-based, Astro classification is LLM-based, prefill respects per-model support |
+
+### CI gating
+
+`.github/workflows/job.yml` runs `test` before `run-job` (`needs: test`). If pytest fails, the scheduled job is skipped — you only get a notification when something is actually broken in test-land.
+
+### Hard invariants (see [CLAUDE.md](./CLAUDE.md))
+
+The pipeline asserts these at runtime AND in CI tests:
+
+1. Zaobao category is set from URL, never from the LLM
+2. The Zaobao sitemap regex matches `singapore`, `world`, `china`, `sea` — never `sports`
+3. Astro category is filled by the LLM (the scraper returns `category=None`)
+4. `_call_claude(use_prefill=True)` for Haiku translation; `use_prefill=False` for Sonnet assessment/distillation
+5. Batch iteration is defensive — never index `batch[j]` from a `results` loop

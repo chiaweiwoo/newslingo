@@ -51,11 +51,18 @@ r"<url>\s*<loc>(https://www\.zaobao\.com\.sg/news/(?:singapore|world|china|sea)/
 Astro is a YouTube channel — there's no URL section to classify from.
 `translate_astro()` uses `classify=True`. The scraper returns `category=None`.
 
-### 4. Assistant prefill forces JSON output
+### 4. Assistant prefill — model-specific support
 
-`_call_claude()` sends `{"role": "assistant", "content": "["}` as the last message.
-This prevents the model from emitting prose like "I need to assess…" instead of JSON.
-The response body is reconstructed as `"[" + body`. Do not remove this prefill.
+`_call_claude(use_prefill=True)` — adds `{"role": "assistant", "content": "["}` to force
+JSON output. **Only Haiku supports this.** Use it for translation calls.
+
+`_call_claude(use_prefill=False)` — ends with the user message only. **Required for
+Sonnet 4.6+**, which returns HTTP 400 if the conversation ends with an assistant turn.
+Use it for assessment and distillation calls. The system prompts for these are
+sufficiently strict ("Return ONLY a JSON array … must START with '['") to avoid prose.
+
+**Never** change `translate_zaobao`/`translate_astro` to `use_prefill=False`.
+**Never** change `assess_translations`/`_distill_rules` to `use_prefill=True`.
 
 ### 5. Defensive batch iteration — never iterate `results` directly
 

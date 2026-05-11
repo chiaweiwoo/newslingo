@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Box, HStack, Image, Spinner, Text, Link } from '@chakra-ui/react';
+import { Box, HStack, Image, Spinner, Text, Link, useToast } from '@chakra-ui/react';
 import { CHANNEL_META, DEFAULT_CHANNEL_COLOR } from '../config/sources';
 import { useSpeech } from '../contexts/SpeechContext';
 import { useFontSize, FONT_SIZE_MAP } from '../contexts/FontSizeContext';
@@ -40,97 +40,24 @@ function IconShare() {
   );
 }
 
-// Build and share a card image for the given headline.
-// Creates a temporary off-screen div, captures it with html2canvas,
-// then uses the Web Share API (mobile) or falls back to download.
-async function shareHeadline(headline: any) {
-  const html2canvas = (await import('html2canvas')).default;
-  await document.fonts.ready;
-
-  const card = document.createElement('div');
-  card.style.cssText = [
-    'position:fixed', 'left:-9999px', 'top:0',
-    'width:600px', 'height:315px',
-    'background:#1C1814',
-    'font-family:"Noto Serif SC","Inter",-apple-system,sans-serif',
-    'box-sizing:border-box',
-    'overflow:hidden',
-  ].join(';');
-
-  // Red accent bar
-  const bar = document.createElement('div');
-  bar.style.cssText = 'position:absolute;top:0;left:0;right:0;height:5px;background:#c8102e';
-  card.appendChild(bar);
-
-  // Inner content padding
-  const inner = document.createElement('div');
-  inner.style.cssText = 'position:absolute;top:30px;left:40px;right:40px;bottom:50px';
-
-  // Chinese headline
-  const zh = document.createElement('div');
-  zh.style.cssText = [
-    'color:#F0EBE0', 'font-size:26px', 'font-weight:700', 'line-height:1.45',
-    'max-height:76px', 'overflow:hidden',
-    `font-family:'Noto Serif SC',serif`,
-  ].join(';');
-  zh.innerText = headline.title_zh;
-  inner.appendChild(zh);
-
-  // English translation
-  if (headline.title_en) {
-    const en = document.createElement('div');
-    en.style.cssText = [
-      'color:#7A7570', 'font-size:15px', 'line-height:1.5',
-      'margin-top:10px', 'max-height:45px', 'overflow:hidden',
-      'font-family:Inter,sans-serif',
-    ].join(';');
-    en.innerText = headline.title_en;
-    inner.appendChild(en);
-  }
-
-  card.appendChild(inner);
-
-  // Footer: source+date on left, NewsLingo on right
+// Share a headline as formatted text + URL.
+// On mobile the native share sheet handles it; on desktop copies to clipboard.
+async function shareHeadline(headline: any, onCopied: () => void) {
+  const url = headline.source_url || `https://www.youtube.com/watch?v=${headline.id}`;
   const date = new Date(headline.published_at).toLocaleDateString('en-MY', {
     day: 'numeric', month: 'short', year: 'numeric',
   });
-  const footer = document.createElement('div');
-  footer.style.cssText = [
-    'position:absolute', 'bottom:20px', 'left:40px', 'right:40px',
-    'display:flex', 'justify-content:space-between', 'align-items:center',
-    'font-family:Inter,sans-serif', 'font-size:12px', 'color:#5A5550',
-  ].join(';');
-  footer.innerHTML = `<span>${headline.channel} · ${date}</span><span style="color:#c8102e;font-weight:700;font-family:'Noto Serif SC',serif;letter-spacing:-0.3px">NewsLingo</span>`;
-  card.appendChild(footer);
 
-  document.body.appendChild(card);
+  // Two-line title block, then source + date
+  const text = [headline.title_zh, headline.title_en]
+    .filter(Boolean)
+    .join('\n') + `\n\n${headline.channel} · ${date}`;
 
-  try {
-    const canvas = await html2canvas(card, {
-      scale: 2,
-      useCORS: true,
-      backgroundColor: '#1C1814',
-    });
-
-    const blob = await new Promise<Blob>(resolve =>
-      canvas.toBlob(b => resolve(b!), 'image/png')
-    );
-
-    const file = new File([blob], 'newslingo.png', { type: 'image/png' });
-
-    if (navigator.canShare?.({ files: [file] })) {
-      await navigator.share({ files: [file], title: headline.title_zh });
-    } else {
-      // Desktop fallback — download the image
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'newslingo.png';
-      a.click();
-      URL.revokeObjectURL(url);
-    }
-  } finally {
-    document.body.removeChild(card);
+  if (navigator.share) {
+    await navigator.share({ title: headline.title_zh, text, url });
+  } else {
+    await navigator.clipboard.writeText(`${text}\n\n${url}`);
+    onCopied();
   }
 }
 
@@ -140,10 +67,11 @@ export default function HeadlineCard({ headline }: { headline: any }) {
   const dateStr = d.toLocaleDateString('en-MY', { day: 'numeric', month: 'short' });
   const timeStr = d.toLocaleTimeString('en-MY', { hour: 'numeric', minute: '2-digit', hour12: true });
 
-  const { playingId, speak }                                     = useSpeech();
-  const { fontSize }                                             = useFontSize();
-  const { definition, loading, activeWord, lookup, dismiss }     = useWordDefinition();
-  const [isSharing, setIsSharing]                                = useState(false);
+  const { playingId, speak }                                 = useSpeech();
+  const { fontSize }                                         = useFontSize();
+  const { definition, loading, activeWord, lookup, dismiss } = useWordDefinition();
+  const [isSharing, setIsSharing]                            = useState(false);
+  const toast                                                = useToast();
 
   const isPlaying    = playingId === headline.id;
   const channelColor = CHANNEL_META[headline.channel]?.color ?? DEFAULT_CHANNEL_COLOR;
@@ -152,8 +80,13 @@ export default function HeadlineCard({ headline }: { headline: any }) {
   const handleShare = async () => {
     if (isSharing) return;
     setIsSharing(true);
-    try { await shareHeadline(headline); }
-    finally { setIsSharing(false); }
+    try {
+      await shareHeadline(headline, () =>
+        toast({ description: 'Copied to clipboard', duration: 2000, position: 'top', status: 'success' })
+      );
+    } finally {
+      setIsSharing(false);
+    }
   };
 
   // Split English title into tokens preserving whitespace between words

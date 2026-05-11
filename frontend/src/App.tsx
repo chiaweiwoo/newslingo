@@ -8,6 +8,7 @@ import { createClient } from '@supabase/supabase-js';
 import HeadlineCard from './components/HeadlineCard';
 import LearningDigestDrawer from './components/LearningDigestDrawer';
 import StatsDrawer from './components/StatsDrawer';
+import TrafficDrawer from './components/TrafficDrawer';
 
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
@@ -55,17 +56,20 @@ export default function App() {
   const sentinelRef = useRef<HTMLDivElement>(null);
   const { isOpen: isDigestOpen,  onOpen: onDigestOpen,  onClose: onDigestClose  } = useDisclosure();
   const { isOpen: isStatsOpen,   onOpen: onStatsOpen,   onClose: onStatsClose   } = useDisclosure();
+  const { isOpen: isTrafficOpen, onOpen: onTrafficOpen, onClose: onTrafficClose } = useDisclosure();
 
   // Visit tracking — fire once on mount
   useEffect(() => {
     const track = async () => {
       try {
-        const { ip } = await fetch('https://api.ipify.org?format=json').then(r => r.json());
+        // ipapi.co returns ip + country in one call
+        const geo = await fetch('https://ipapi.co/json/').then(r => r.json());
         const ua = navigator.userAgent;
         await supabase.from('visits').insert({
-          ip,
+          ip:         geo.ip,
+          country:    geo.country_name ?? null,
           user_agent: ua,
-          is_mobile: /Mobi|Android/i.test(ua),
+          is_mobile:  /Mobi|Android/i.test(ua),
         });
       } catch (_) {}
     };
@@ -234,6 +238,29 @@ export default function App() {
                       <Text>Statistics</Text>
                     </HStack>
                   </MenuItem>
+                  <MenuItem
+                    onClick={onTrafficOpen}
+                    fontSize="xs"
+                    color="brand.ink"
+                    bg="white"
+                    _hover={{ bg: 'brand.paper' }}
+                    _focus={{ bg: 'brand.paper' }}
+                    px={4} py={2.5}
+                  >
+                    <HStack spacing={2}>
+                      <Box
+                        px={1.5} py="1px"
+                        border="1px solid" borderColor="brand.muted"
+                        borderRadius="sm" flexShrink={0}
+                      >
+                        <Text fontSize="2xs" fontWeight="700" color="brand.muted"
+                          textTransform="uppercase" letterSpacing="widest">
+                          ~
+                        </Text>
+                      </Box>
+                      <Text>Traffic</Text>
+                    </HStack>
+                  </MenuItem>
                 </MenuList>
               </Menu>
             </HStack>
@@ -328,6 +355,7 @@ export default function App() {
 
       <LearningDigestDrawer isOpen={isDigestOpen}  onClose={onDigestClose} />
       <StatsDrawer           isOpen={isStatsOpen}   onClose={onStatsClose} />
+      <TrafficDrawer         isOpen={isTrafficOpen} onClose={onTrafficClose} />
     </Box>
   );
 }

@@ -79,7 +79,8 @@ CREATE INDEX IF NOT EXISTS idx_learning_digest_active ON public.learning_digest 
 CREATE TABLE IF NOT EXISTS public.visits (
     id         BIGSERIAL   PRIMARY KEY,
     visited_at TIMESTAMPTZ DEFAULT now(),
-    path       TEXT,
-    referrer   TEXT,
-    user_agent TEXT
+    ip         TEXT,
+    country    TEXT,
+    user_agent TEXT,
+    is_mobile  BOOLEAN
 );

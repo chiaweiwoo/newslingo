@@ -26,8 +26,8 @@ and stored in Supabase. The job runs every 3 hours via GitHub Actions.
 |---|---|
 | `/news/singapore/` | `Singapore` |
 | `/news/world/` | `International` |
-| `/news/china/` | `International` |
-| `/news/sea/` | `International` |
+
+`/news/china/` and `/news/sea/` are out of scope — not scraped, not stored.
 
 **Why:** The URL unambiguously signals the editorial section. LLM classification
 introduced errors and added unnecessary API cost. This is enforced by:
@@ -38,18 +38,34 @@ introduced errors and added unnecessary API cost. This is enforced by:
 
 If you see `classify=True` in `translate_zaobao()` — that's a bug. Fix it.
 
-### 2. Zaobao: Four sections are scraped (not just Singapore)
+### 2. Zaobao: Two sections are scraped — singapore and world only
 
-The sitemap regex must match: `singapore`, `world`, `china`, `sea`. NOT `sports`.
+`china` and `sea` are **out of scope** and intentionally excluded.
+
+The sitemap regex must match only: `singapore`, `world`. NOT `china`, `sea`, `sports`.
 
 ```python
-r"<url>\s*<loc>(https://www\.zaobao\.com\.sg/news/(?:singapore|world|china|sea)/story[^<]+)</loc>"
+r"<url>\s*<loc>(https://www\.zaobao\.com\.sg/news/(?:singapore|world)/story[^<]+)</loc>"
 ```
 
-### 3. Astro: Category IS set by the LLM
+The frontend also filters out any china/sea rows that may exist in the DB from earlier runs.
+
+### 3. Astro: Category IS set by the LLM — three options
 
 Astro is a YouTube channel — there's no URL section to classify from.
 `translate_astro()` uses `classify=True`. The scraper returns `category=None`.
+
+Valid categories: `Malaysia`, `Singapore`, `International`.
+
+**Sequential classification rules (apply in order, stop at first match):**
+1. `Malaysia` — news about Malaysian politics, people, places, companies, courts, or events
+2. `Singapore` — news **exclusively** about Singapore with no material Malaysian angle (rare on this channel)
+3. `International` — everything else
+
+Tie-breaking:
+- Malaysia-Singapore bilateral stories → `Malaysia` (Astro is a Malaysian channel)
+- SEA regional news (Thailand, Indonesia, etc.) → `International`
+- Any doubt between Malaysia and Singapore → `Malaysia`
 
 ### 4. Assistant prefill — model-specific support
 
@@ -87,7 +103,7 @@ GitHub Actions (cron: every 3h)
        ├── scrapers/astro.py   → YouTube API    → rows with category=None
        ├── _translate_batch()  → Claude Haiku   → fills title_en (+ category for Astro)
        ├── assess_translations() → Claude Sonnet → scores 1–5, retry if <3
-       ├── _distill_rules()    → Claude Sonnet  → every 10 runs, improves prompt_rules
+       ├── _distill_rules()    → Claude Sonnet  → every successful run, improves prompt_rules
        └── upsert_rows()       → Supabase       → headlines table
 ```
 
@@ -126,7 +142,7 @@ GitHub Actions (cron: every 3h)
   Always iterate `enumerate(batch)` and guard with `j < len(results)`.
 
 - **All Zaobao rows showing `category=Singapore`** — regex is only matching `/news/singapore/`.
-  Check that the sitemap regex includes `(?:singapore|world|china|sea)`.
+  Check that the sitemap regex includes `(?:singapore|world)`.
 
 - **GitHub Actions running stale code** — a `workflow_dispatch` queued before a push
   runs the old version. The startup banner `[job] NewsLingo job starting — build: ...`

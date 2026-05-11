@@ -3,7 +3,7 @@ Unit tests for scrapers/zaobao.py
 
 Key invariants tested:
   1. URL-to-category mapping is deterministic (no LLM involved).
-  2. All 4 sections (singapore, world, china, sea) are scraped.
+  2. Only 2 sections are scraped: singapore and world (china + sea are out of scope).
   3. The audio-briefing filter strips 听新闻简报 articles.
   4. Sitemap parser extracts correct (url, lastmod) pairs across sections.
 """
@@ -23,11 +23,13 @@ class TestCategoryFromUrl:
         url = "https://www.zaobao.com.sg/news/world/story20250510-1234567"
         assert _category_from_url(url) == "International"
 
-    def test_china_section(self):
+    def test_china_section_defaults_international(self):
+        # china is not in _SECTION_CATEGORY — falls through to International fallback
         url = "https://www.zaobao.com.sg/news/china/story20250510-9876543"
         assert _category_from_url(url) == "International"
 
-    def test_sea_section(self):
+    def test_sea_section_defaults_international(self):
+        # sea is not in _SECTION_CATEGORY — falls through to International fallback
         url = "https://www.zaobao.com.sg/news/sea/story20250510-1111111"
         assert _category_from_url(url) == "International"
 
@@ -36,12 +38,12 @@ class TestCategoryFromUrl:
         url = "https://www.zaobao.com.sg/news/sports/story20250510-0000000"
         assert _category_from_url(url) == "International"
 
-    def test_all_mapped_sections_present(self):
-        # Guard: if a new section is added to _SECTION_CATEGORY, this test documents it
+    def test_only_two_sections_mapped(self):
+        # Only singapore and world are in scope — china and sea are deliberately excluded
         assert "singapore" in _SECTION_CATEGORY
         assert "world" in _SECTION_CATEGORY
-        assert "china" in _SECTION_CATEGORY
-        assert "sea" in _SECTION_CATEGORY
+        assert "china" not in _SECTION_CATEGORY
+        assert "sea" not in _SECTION_CATEGORY
 
     def test_no_sports_in_section_map(self):
         # Sports must NOT be in the section map — it's excluded at scrape time by the regex
@@ -51,7 +53,7 @@ class TestCategoryFromUrl:
 # ── Sitemap regex ─────────────────────────────────────────────────────────────
 
 SITEMAP_REGEX = re.compile(
-    r"<url>\s*<loc>(https://www\.zaobao\.com\.sg/news/(?:singapore|world|china|sea)/story[^<]+)</loc>"
+    r"<url>\s*<loc>(https://www\.zaobao\.com\.sg/news/(?:singapore|world)/story[^<]+)</loc>"
     r"\s*<lastmod>([^<]+)</lastmod>"
 )
 
@@ -73,13 +75,15 @@ class TestSitemapRegex:
         xml = self._make_entry("world")
         assert SITEMAP_REGEX.search(xml) is not None
 
-    def test_matches_china(self):
+    def test_does_not_match_china(self):
+        # china is out of scope — must not be scraped
         xml = self._make_entry("china")
-        assert SITEMAP_REGEX.search(xml) is not None
+        assert SITEMAP_REGEX.search(xml) is None
 
-    def test_matches_sea(self):
+    def test_does_not_match_sea(self):
+        # sea is out of scope — must not be scraped
         xml = self._make_entry("sea")
-        assert SITEMAP_REGEX.search(xml) is not None
+        assert SITEMAP_REGEX.search(xml) is None
 
     def test_does_not_match_sports(self):
         xml = self._make_entry("sports")
@@ -94,18 +98,18 @@ class TestSitemapRegex:
         assert lastmod == "2025-05-10T10:00:00+00:00"
 
     def test_multi_section_xml(self):
-        """Regex must find entries from multiple sections in one XML blob."""
+        """Regex must find only singapore and world entries — not china, sea, or sports."""
         xml = "\n".join([
             self._make_entry("singapore", "sg001"),
             self._make_entry("world", "wd001"),
-            self._make_entry("china", "cn001"),
-            self._make_entry("sea", "se001"),
+            self._make_entry("china", "cn001"),   # must NOT be picked up
+            self._make_entry("sea", "se001"),     # must NOT be picked up
             self._make_entry("sports", "sp001"),  # must NOT be picked up
         ])
         matches = SITEMAP_REGEX.findall(xml)
-        assert len(matches) == 4
+        assert len(matches) == 2
         sections_found = {m[0].split("/news/")[1].split("/")[0] for m in matches}
-        assert sections_found == {"singapore", "world", "china", "sea"}
+        assert sections_found == {"singapore", "world"}
 
 
 # ── Audio-brief filter ────────────────────────────────────────────────────────

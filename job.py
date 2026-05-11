@@ -42,10 +42,16 @@ ASTRO_SYSTEM_PROMPT = (
     "1. Translate from Chinese to Malaysian English\n"
     "2. Classify as 'Malaysia' (local Malaysian news) or 'International' (foreign/world news)\n\n"
 
-    "CLASSIFICATION RULES:\n"
-    "- 'Malaysia': news about Malaysian politics, people, places, companies, courts, or events\n"
-    "- 'International': news about other countries, world leaders, global events, foreign incidents\n"
-    "- When in doubt (e.g. Malaysian reaction to world event): classify by WHERE the event happened\n\n"
+    "CLASSIFICATION RULES (apply in order — stop at first match):\n"
+    "1. 'Malaysia' — news about Malaysian politics, people, places, companies, courts, or events\n"
+    "2. 'Singapore' — news exclusively about Singapore with no material Malaysian angle\n"
+    "   (rare on this channel — only use when the story is clearly and solely about Singapore)\n"
+    "3. 'International' — news about other countries, world leaders, global events\n\n"
+    "Sequential tie-breaking:\n"
+    "- Malaysia-Singapore bilateral stories → 'Malaysia' (classify from Astro's Malaysian perspective)\n"
+    "- Southeast Asian regional news (Thailand, Indonesia, Vietnam, etc.) → 'International'\n"
+    "- When in doubt between Malaysia and Singapore → 'Malaysia'\n"
+    "- When in doubt between Singapore and International → 'International'\n\n"
 
     "POLITICAL TITLES & ROLES:\n"
     "- 首相 → Prime Minister (not Premier)\n"
@@ -94,7 +100,8 @@ ASTRO_SYSTEM_PROMPT = (
     "Return ONLY a JSON array, one object per input line, same order.\n"
     "Each object must have exactly two keys: \"title_en\" and \"category\".\n"
     "Example: [{\"title_en\": \"PM meets king\", \"category\": \"Malaysia\"}, "
-    "{\"title_en\": \"Trump signs bill\", \"category\": \"International\"}]"
+    "{\"title_en\": \"Trump signs bill\", \"category\": \"International\"}, "
+    "{\"title_en\": \"Singapore budget announced\", \"category\": \"Singapore\"}]"
 )
 
 ZAOBAO_SYSTEM_PROMPT = (

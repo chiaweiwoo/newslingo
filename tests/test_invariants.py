@@ -59,13 +59,20 @@ class TestZaobaoClassificationInvariant:
             "to catch any accidental category overwrite during translation."
         )
 
-    def test_zaobao_regex_covers_four_sections(self):
+    def test_zaobao_regex_covers_two_sections(self):
         src = read_source("scrapers/zaobao.py")
-        # The sitemap regex must cover all 4 sections
-        for section in ("singapore", "world", "china", "sea"):
+        # Only singapore and world are in scope — china and sea are deliberately excluded
+        for section in ("singapore", "world"):
             assert section in src, (
                 f"scrapers/zaobao.py regex must include '{section}' section"
             )
+        # china and sea must NOT appear in the regex (out of scope)
+        import re as _re
+        regex_match = _re.search(r'r".*?/news/\(.*?\).*?"', src)
+        if regex_match:
+            regex_str = regex_match.group(0)
+            assert "china" not in regex_str, "china must not be in the sitemap regex — it is out of scope"
+            assert "sea" not in regex_str, "sea must not be in the sitemap regex — it is out of scope"
 
     def test_category_from_url_function_exists(self):
         src = read_source("scrapers/zaobao.py")

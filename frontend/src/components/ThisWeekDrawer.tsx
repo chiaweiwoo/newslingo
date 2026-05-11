@@ -82,7 +82,7 @@ export default function ThisWeekDrawer({ isOpen, onClose }: Props) {
           <Text fontSize="xs" color="brand.muted" fontWeight="400" mt={0.5}>
             {summary
               ? `${formatDate(summary.week_start)} – ${formatDate(summary.week_end)}`
-              : 'The week's most important stories, grouped by topic.'}
+              : "The week's most important stories, grouped by topic."}
           </Text>
         </DrawerHeader>
 

@@ -1,10 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Box, Flex, Heading, Spinner, Text, VStack, Divider, HStack, Center
+  Box, Flex, Heading, Spinner, Text, VStack, Divider, HStack, Center,
+  useDisclosure,
 } from '@chakra-ui/react';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { createClient } from '@supabase/supabase-js';
 import HeadlineCard from './components/HeadlineCard';
+import AIInsightsDrawer from './components/AIInsightsDrawer';
 
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
@@ -50,6 +52,7 @@ function timeAgo(dateStr: string): string {
 export default function App() {
   const [activeTab, setActiveTab] = useState<Category>('International');
   const sentinelRef = useRef<HTMLDivElement>(null);
+  const { isOpen: isInsightsOpen, onOpen: onInsightsOpen, onClose: onInsightsClose } = useDisclosure();
 
   // Visit tracking — fire once on mount
   useEffect(() => {
@@ -143,11 +146,22 @@ export default function App() {
             >
               NewsLingo
             </Heading>
-            {latestDate && (
-              <Text fontSize="2xs" color="gray.500" letterSpacing="wide">
-                Updated {timeAgo(latestDate)}
+            <HStack spacing={3}>
+              <Text
+                fontSize="2xs" color="gray.500" cursor="pointer"
+                onClick={onInsightsOpen}
+                _hover={{ color: 'gray.300' }}
+                transition="color 0.15s"
+                title="How AI is improving"
+              >
+                🧠 AI
               </Text>
-            )}
+              {latestDate && (
+                <Text fontSize="2xs" color="gray.500" letterSpacing="wide">
+                  Updated {timeAgo(latestDate)}
+                </Text>
+              )}
+            </HStack>
           </Flex>
 
           {/* Tab bar */}
@@ -233,6 +247,7 @@ export default function App() {
           )}
         </Box>
       </Box>
+      <AIInsightsDrawer isOpen={isInsightsOpen} onClose={onInsightsClose} />
     </Box>
   );
 }

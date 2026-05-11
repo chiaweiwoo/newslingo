@@ -1,5 +1,6 @@
 import React from 'react';
 import { Box, HStack, Image, Text, Link } from '@chakra-ui/react';
+import { CHANNEL_META, DEFAULT_CHANNEL_COLOR } from '../config/sources';
 import { useSpeech } from '../contexts/SpeechContext';
 
 // Noto Serif SC for Chinese editorial headlines — Bilingual Editorial Asia design
@@ -33,7 +34,8 @@ export default function HeadlineCard({ headline }: { headline: any }) {
   const timeStr = d.toLocaleTimeString('en-MY', { hour: 'numeric', minute: '2-digit', hour12: true });
 
   const { playingId, speak } = useSpeech();
-  const isPlaying = playingId === headline.id;
+  const isPlaying    = playingId === headline.id;
+  const channelColor = CHANNEL_META[headline.channel]?.color ?? DEFAULT_CHANNEL_COLOR;
 
   return (
     <HStack
@@ -109,7 +111,7 @@ export default function HeadlineCard({ headline }: { headline: any }) {
 
         {/* Meta line — source · date · time */}
         <HStack mt={1.5} spacing={1} fontSize="2xs" color="brand.muted" letterSpacing="0.02em">
-          <Text fontWeight="600" color="brand.red">{headline.channel}</Text>
+          <Text fontWeight="600" color={channelColor}>{headline.channel}</Text>
           <Text color="brand.rule">·</Text>
           <Text>{dateStr}</Text>
           <Text color="brand.rule">·</Text>

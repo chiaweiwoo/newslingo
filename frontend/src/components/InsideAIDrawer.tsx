@@ -71,27 +71,13 @@ export default function InsideAIDrawer({ isOpen, onClose }: Props) {
         <DrawerCloseButton color="brand.muted" mt={1} />
 
         <DrawerHeader borderBottom="1px solid" borderColor="brand.rule" pb={3} pt={4}>
-          <HStack spacing={2.5} align="start">
-            <Box
-              px={1.5} py="2px" mt="3px"
-              border="1px solid" borderColor="brand.red"
-              borderRadius="sm" flexShrink={0}
-            >
-              <Text fontSize="2xs" fontWeight="700" letterSpacing="widest"
-                color="brand.red" textTransform="uppercase">
-                AI
-              </Text>
-            </Box>
-            <Box>
-              <Text fontSize="md" fontWeight="700" color="brand.ink" lineHeight="1.2"
-                fontFamily="'Noto Serif SC', 'Georgia', serif">
-                Inside AI
-              </Text>
-              <Text fontSize="xs" color="brand.muted" fontWeight="400" mt={0.5}>
-                How the AI reviews its own translations — what it gets right, wrong, and improves.
-              </Text>
-            </Box>
-          </HStack>
+          <Text fontSize="md" fontWeight="700" color="brand.ink" lineHeight="1.2"
+            fontFamily="'Noto Serif SC', 'Georgia', serif">
+            Inside AI
+          </Text>
+          <Text fontSize="xs" color="brand.muted" fontWeight="400" mt={0.5}>
+            How the AI reviews its own translations — what it gets right, wrong, and improves.
+          </Text>
         </DrawerHeader>
 
         <DrawerBody py={4} overflowY="auto">

@@ -31,7 +31,7 @@ ANTHROPIC_API_KEY    = os.getenv("ANTHROPIC_API_KEY")
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 claude   = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=120.0)
 
-DIGEST_MODEL = "claude-sonnet-4-6"
+DIGEST_MODEL = "claude-opus-4-6"
 
 DIGEST_SYSTEM_PROMPT = (
     "You are a bilingual news translation quality analyst for NewsLingo, an app covering:\n"

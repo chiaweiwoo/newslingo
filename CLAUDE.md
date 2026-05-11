@@ -50,7 +50,22 @@ r"<url>\s*<loc>(https://www\.zaobao\.com\.sg/news/(?:singapore|world)/story[^<]+
 
 The frontend also filters out any china/sea rows that may exist in the DB from earlier runs.
 
-### 3. Astro: Category IS set by the LLM — three options
+### 3. Astro: No sitemap — uses YouTube Data API v3 PlaylistItems
+
+Astro 本地圈 is a YouTube channel, not a website, so there is no sitemap.
+
+The scraper (`scrapers/astro.py`) uses the **YouTube Data API v3 PlaylistItems endpoint**
+(uploads playlist), which returns videos in **reverse-chronological order** (newest first).
+It paginates until it hits a video published before the cutoff, then stops — the same
+"scan until out of range" logic that Zaobao uses against its sitemap.
+
+Key implementation notes:
+- Upload playlist ID is derived by replacing `UC` prefix with `UU` (no extra API call).
+- Uses PlaylistItems, not the Search API — Search has a several-hour indexing delay
+  that silently misses recent videos. PlaylistItems reflects uploads immediately.
+- `DEFAULT_LOOKBACK_HOURS = 120` (5 days) ensures first-run repull has enough coverage.
+
+### 4. Astro: Category IS set by the LLM — three valid values
 
 Astro is a YouTube channel — there's no URL section to classify from.
 `translate_astro()` uses `classify=True`. The scraper returns `category=None`.
@@ -67,7 +82,7 @@ Tie-breaking:
 - SEA regional news (Thailand, Indonesia, etc.) → `International`
 - Any doubt between Malaysia and Singapore → `Malaysia`
 
-### 4. Assistant prefill — model-specific support
+### 5. Assistant prefill — model-specific support
 
 `_call_claude(use_prefill=True)` — adds `{"role": "assistant", "content": "["}` to force
 JSON output. **Only Haiku supports this.** Use it for translation calls.
@@ -77,10 +92,10 @@ Sonnet 4.6+**, which returns HTTP 400 if the conversation ends with an assistant
 Use it for assessment and distillation calls. The system prompts for these are
 sufficiently strict ("Return ONLY a JSON array … must START with '['") to avoid prose.
 
-**Never** change `translate_zaobao`/`translate_astro` to `use_prefill=False`.
-**Never** change `assess_translations`/`_distill_rules` to `use_prefill=True`.
+**Never** change `translate_zaobao` / `translate_astro` to `use_prefill=False`.
+**Never** change `assess_translations` / `_distill_rules` to `use_prefill=True`.
 
-### 5. Defensive batch iteration — never iterate `results` directly
+### 6. Defensive batch iteration — never iterate `results` directly
 
 ```python
 # CORRECT — iterate batch (fixed length), index into results safely
@@ -153,10 +168,11 @@ GitHub Actions (cron: Monday 08:00 SGT)
 
 | Task | Model | Notes |
 |---|---|---|
-| Translation | `claude-haiku-4-5-20251001` | Fast, cheap |
-| Assessment | `claude-sonnet-4-6` | More reliable on structured output |
+| Translation | `claude-haiku-4-5-20251001` | Fast, cheap — high volume |
+| Assessment | `claude-sonnet-4-6` | Structured output; runs every 3h |
 | Distillation | `claude-sonnet-4-6` | Rule extraction from failures |
-| Weekly summary | `claude-sonnet-4-6` | Topic clustering from 7-day headlines |
+| Inside AI digest | `claude-opus-4-6` | Daily; quality matters over cost |
+| Weekly summary | `claude-opus-4-6` | Weekly; quality matters over cost |
 
 **ASSESS_BATCH_SIZE = 20** — Sonnet drops/duplicates items at higher counts. Do not raise.  
 **CLAUDE_BATCH_SIZE = 50** — Translation batch size.

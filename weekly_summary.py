@@ -34,12 +34,13 @@ SUMMARY_MODEL    = "claude-sonnet-4-6"
 LOOKBACK_DAYS    = 7
 MIN_NEW_HEADLINES = 30   # skip regeneration if fewer new headlines since last run
 
-SUMMARY_SYSTEM_PROMPT = (
-    "You are a bilingual news editor for NewsLingo, summarising the most "
-    "important recent stories for readers who follow Singapore, Malaysia, and world news.\n\n"
+THEMES = ["Politics", "Economy", "Society", "Security", "Technology", "Environment"]
 
-    "You will receive translated headlines from the past 7 days, tagged by "
-    "region (International / Malaysia / Singapore).\n\n"
+SUMMARY_SYSTEM_PROMPT = (
+    "You are a bilingual news editor for NewsLingo, covering Singapore, Malaysia, and world news.\n\n"
+
+    "You will receive translated headlines from the past 7 days, tagged by region "
+    "(International / Malaysia / Singapore).\n\n"
 
     "Produce a JSON object with this exact structure:\n"
     "{\n"
@@ -47,18 +48,31 @@ SUMMARY_SYSTEM_PROMPT = (
     "    {\n"
     '      "title": "Short topic label (max 8 words)",\n'
     '      "summary": "One tight sentence (max 20 words) capturing what happened.",\n'
-    '      "region": "International" | "Malaysia" | "Singapore"\n'
+    '      "region": "International" | "Malaysia" | "Singapore",\n'
+    '      "theme": "Politics" | "Economy" | "Society" | "Security" | "Technology" | "Environment"\n'
     "    }\n"
     "  ]\n"
     "}\n\n"
 
+    "A story is important if it meets all three criteria:\n"
+    "1. Impact — real consequences for a significant number of people\n"
+    "2. Coverage — appeared across multiple headlines, not a single mention\n"
+    "3. Recency — developing or recently concluded, not old background context\n\n"
+
+    "Theme definitions (assign exactly one per topic):\n"
+    "- Politics: elections, government, parliament, policy, diplomacy\n"
+    "- Economy: markets, trade, business, corporate news, cost of living\n"
+    "- Society: crime, courts, culture, education, public health, religion\n"
+    "- Security: armed conflicts, military, terrorism, weapons, sanctions\n"
+    "- Technology: AI, software, infrastructure, cybersecurity, science\n"
+    "- Environment: climate, natural disasters, energy, conservation\n\n"
+
     "Rules:\n"
-    "- Pick 5-8 of the most important or widely-covered topics\n"
-    "- Spread across regions where the news allows — don't cluster everything under one region\n"
+    "- Pick 10-15 topics — more topics give readers better filter coverage\n"
+    "- Spread across regions and themes; don't cluster under one region or theme\n"
     "- Title: noun phrase, max 8 words, no punctuation at the end\n"
     "- Summary: ONE sentence only, max 20 words, plain English, no jargon, no markdown\n"
-    "- region: assign based on where the story is primarily about\n"
-    "- Skip minor or repetitive stories — quality over quantity\n"
+    "- Assign exactly one theme per topic\n"
     "- Return ONLY the JSON object. No preamble, no explanation, no markdown fences.\n"
 )
 

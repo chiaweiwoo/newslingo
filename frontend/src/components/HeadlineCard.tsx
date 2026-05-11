@@ -32,11 +32,11 @@ export default function HeadlineCard({ headline }: { headline: any }) {
       <Box flex={1} minW={0}>
         <Link href={articleUrl} isExternal _hover={{ textDecoration: 'none' }}>
           <Text fontSize="sm" fontWeight="bold" lineHeight="1.35" color="gray.800"
-            _hover={{ color: 'red.500' }} transition="color 0.1s" noOfLines={2}>
+            _hover={{ color: 'red.500' }} transition="color 0.1s">
             {headline.title_zh}
           </Text>
         </Link>
-        <Text fontSize="xs" color="gray.500" lineHeight="1.4" mt={0.5} noOfLines={1}>
+        <Text fontSize="xs" color="gray.500" lineHeight="1.4" mt={0.5}>
           {headline.title_en}
         </Text>
         <HStack spacing={2} mt={0.5}>

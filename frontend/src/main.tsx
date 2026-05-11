@@ -4,6 +4,7 @@ import { ChakraProvider } from '@chakra-ui/react';
 import theme from './theme';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import App from './App';
+import { SpeechProvider } from './contexts/SpeechContext';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -17,7 +18,9 @@ root.render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
       <ChakraProvider theme={theme}>
-        <App />
+        <SpeechProvider>
+          <App />
+        </SpeechProvider>
       </ChakraProvider>
     </QueryClientProvider>
   </React.StrictMode>

@@ -55,6 +55,8 @@ function timeAgo(dateStr: string): string {
 export default function App() {
   const [activeTab, setActiveTab] = useState<Category>('International');
   const sentinelRef = useRef<HTMLDivElement>(null);
+  const headerRef   = useRef<HTMLDivElement>(null);
+  const [headerHeight, setHeaderHeight] = useState(80);
   const { isOpen: isAboutOpen,   onOpen: onAboutOpen,   onClose: onAboutClose   } = useDisclosure();
   const { isOpen: isDigestOpen,  onOpen: onDigestOpen,  onClose: onDigestClose  } = useDisclosure();
   const { isOpen: isStatsOpen,   onOpen: onStatsOpen,   onClose: onStatsClose   } = useDisclosure();
@@ -124,6 +126,17 @@ export default function App() {
       lastPage.length < PAGE_SIZE ? undefined : allPages.flat().length,
   });
 
+  // Measure navbar height so sticky date headers sit flush below it
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => {
+      setHeaderHeight(entry.contentRect.height);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   // Infinite scroll sentinel
   useEffect(() => {
     const el = sentinelRef.current;
@@ -148,6 +161,7 @@ export default function App() {
 
       {/* Sticky header */}
       <Box
+        ref={headerRef}
         position="sticky" top={0} zIndex={100}
         bg="#111111" borderBottom="3px solid" borderColor="brand.red"
       >
@@ -322,8 +336,19 @@ export default function App() {
           <VStack spacing={6} align="stretch">
             {Object.entries(grouped).map(([date, items]) => (
               <Box key={date} id={toSlug(date)}>
-                {/* Date separator — all-caps editorial rule */}
-                <Flex align="center" gap={3} mb={3}>
+                {/* Date separator — sticky, sits flush below navbar while scrolling */}
+                <Flex
+                  position="sticky"
+                  top={`${headerHeight}px`}
+                  zIndex={50}
+                  bg="brand.paper"
+                  align="center"
+                  gap={3}
+                  mx={-3} px={3}
+                  py={2}
+                  mb={2}
+                  boxShadow="0 2px 6px -2px rgba(0,0,0,0.06)"
+                >
                   <Divider borderColor="brand.rule" />
                   <Text
                     fontSize="2xs" fontWeight="700" color="brand.muted"

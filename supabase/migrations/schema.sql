@@ -84,3 +84,44 @@ CREATE TABLE IF NOT EXISTS public.visits (
     user_agent TEXT,
     is_mobile  BOOLEAN
 );
+
+-- ── Row Level Security ────────────────────────────────────────────────────────
+-- The anon key is exposed in the frontend bundle. RLS ensures it can only read
+-- data — never write/delete — except visits where INSERT is intentional.
+-- The service_role key (backend job) bypasses RLS entirely, so no policies
+-- are needed for write operations.
+
+ALTER TABLE public.headlines       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.job_runs        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.assessment_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.prompt_rules    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.learning_digest ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.visits          ENABLE ROW LEVEL SECURITY;
+
+-- headlines — public read
+CREATE POLICY "headlines_anon_select"
+  ON public.headlines FOR SELECT TO anon USING (true);
+
+-- job_runs — public read (frontend reads latest job timestamp)
+CREATE POLICY "job_runs_anon_select"
+  ON public.job_runs FOR SELECT TO anon USING (true);
+
+-- assessment_logs — public read (Stats drawer)
+CREATE POLICY "assessment_logs_anon_select"
+  ON public.assessment_logs FOR SELECT TO anon USING (true);
+
+-- prompt_rules — public read (Learning Digest drawer)
+CREATE POLICY "prompt_rules_anon_select"
+  ON public.prompt_rules FOR SELECT TO anon USING (true);
+
+-- learning_digest — public read (Learning Digest drawer)
+CREATE POLICY "learning_digest_anon_select"
+  ON public.learning_digest FOR SELECT TO anon USING (true);
+
+-- visits — anon may insert (visit tracking) and select (Traffic drawer)
+-- Note: raw IPs are readable via anon key — acceptable for a personal project.
+CREATE POLICY "visits_anon_insert"
+  ON public.visits FOR INSERT TO anon WITH CHECK (true);
+
+CREATE POLICY "visits_anon_select"
+  ON public.visits FOR SELECT TO anon USING (true);

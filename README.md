@@ -23,6 +23,41 @@ Tap any English word for a definition · speaker icon reads aloud · share butto
 
 ---
 
+## How it works
+
+```mermaid
+flowchart LR
+    subgraph src["Sources"]
+        ZB["🗞️ 联合早报\nSitemap"]
+        YT["📺 Astro 本地圈\nYouTube API"]
+    end
+
+    subgraph agg["Aggregate · every 3 hours"]
+        TR["Translate\nClaude Haiku"]
+        AS["Assess\nClaude Sonnet"]
+        DR["Distil rules\nClaude Sonnet"]
+        TR --> AS --> DR
+    end
+
+    DB[("Supabase")]
+
+    subgraph scheduled["Scheduled jobs"]
+        DG["Inside AI\nSonnet · daily"]
+        WS["This Week\nSonnet · Monday"]
+    end
+
+    FE["🌐 Frontend\nVercel"]
+
+    ZB & YT --> TR
+    AS --> DB
+    DR --> DB
+    DB <--> DG
+    DB <--> WS
+    DB --> FE
+```
+
+---
+
 ## Stack
 
 | Layer | Technology |

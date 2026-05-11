@@ -56,7 +56,6 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<Category>('International');
   const sentinelRef = useRef<HTMLDivElement>(null);
   const headerRef   = useRef<HTMLDivElement>(null);
-  const [headerHeight, setHeaderHeight] = useState(80);
   const { isOpen: isAboutOpen,   onOpen: onAboutOpen,   onClose: onAboutClose   } = useDisclosure();
   const { isOpen: isDigestOpen,  onOpen: onDigestOpen,  onClose: onDigestClose  } = useDisclosure();
   const { isOpen: isStatsOpen,   onOpen: onStatsOpen,   onClose: onStatsClose   } = useDisclosure();
@@ -126,21 +125,16 @@ export default function App() {
       lastPage.length < PAGE_SIZE ? undefined : allPages.flat().length,
   });
 
-  // Measure navbar height so sticky date headers sit flush below it.
-  // useLayoutEffect reads the real height synchronously before the first paint
-  // so there is never a wrong-offset frame. ResizeObserver handles future changes
-  // (e.g. font-load, zoom).
+  // Write the navbar height directly into a CSS variable — no React state, no
+  // re-render cycle. The sticky date labels read `--header-h` so the correct
+  // offset is applied from the very first browser paint.
   useLayoutEffect(() => {
-    if (headerRef.current) {
-      setHeaderHeight(headerRef.current.offsetHeight);
-    }
-  }, []);
-  useEffect(() => {
     const el = headerRef.current;
     if (!el) return;
-    const ro = new ResizeObserver(([entry]) => {
-      setHeaderHeight(Math.round(entry.contentRect.height));
-    });
+    const update = () =>
+      document.documentElement.style.setProperty('--header-h', `${el.offsetHeight}px`);
+    update();                          // synchronous — fires before browser paints
+    const ro = new ResizeObserver(update);
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
@@ -347,7 +341,7 @@ export default function App() {
                 {/* Date separator — sticky, sits flush below navbar while scrolling */}
                 <Flex
                   position="sticky"
-                  top={`${headerHeight}px`}
+                  style={{ top: 'var(--header-h, 80px)' }}
                   zIndex={50}
                   bg="brand.paper"
                   align="center"

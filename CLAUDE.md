@@ -171,8 +171,8 @@ GitHub Actions (cron: Monday 08:00 SGT)
 | Translation | `claude-haiku-4-5-20251001` | Fast, cheap — high volume |
 | Assessment | `claude-sonnet-4-6` | Structured output; runs every 3h |
 | Distillation | `claude-sonnet-4-6` | Rule extraction from failures |
-| Inside AI digest | `claude-opus-4-6` | Daily; quality matters over cost |
-| Weekly summary | `claude-opus-4-6` | Weekly; quality matters over cost |
+| Inside AI digest | `claude-sonnet-4-6` | Daily; structured summarisation, Sonnet is sufficient |
+| Weekly summary | `claude-sonnet-4-6` | Weekly; editorial judgement, Sonnet is sufficient |
 
 **ASSESS_BATCH_SIZE = 20** — Sonnet drops/duplicates items at higher counts. Do not raise.  
 **CLAUDE_BATCH_SIZE = 50** — Translation batch size.

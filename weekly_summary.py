@@ -30,7 +30,7 @@ ANTHROPIC_API_KEY    = os.getenv("ANTHROPIC_API_KEY")
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 claude   = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=120.0)
 
-SUMMARY_MODEL = "claude-opus-4-6"
+SUMMARY_MODEL = "claude-sonnet-4-6"
 
 SUMMARY_SYSTEM_PROMPT = (
     "You are a bilingual news editor for NewsLingo, summarising the week's most "

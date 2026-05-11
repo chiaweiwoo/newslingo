@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Box, Flex, Heading, Spinner, Text, VStack, Divider, HStack, Center,
-  useDisclosure, Menu, MenuButton, MenuList, MenuItem,
+  useDisclosure, Menu, MenuButton, MenuDivider, MenuGroup, MenuList, MenuItem,
 } from '@chakra-ui/react';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { createClient } from '@supabase/supabase-js';
+import AboutDrawer from './components/AboutDrawer';
 import HeadlineCard from './components/HeadlineCard';
 import LearningDigestDrawer from './components/LearningDigestDrawer';
 import StatsDrawer from './components/StatsDrawer';
@@ -54,6 +55,7 @@ function timeAgo(dateStr: string): string {
 export default function App() {
   const [activeTab, setActiveTab] = useState<Category>('International');
   const sentinelRef = useRef<HTMLDivElement>(null);
+  const { isOpen: isAboutOpen,   onOpen: onAboutOpen,   onClose: onAboutClose   } = useDisclosure();
   const { isOpen: isDigestOpen,  onOpen: onDigestOpen,  onClose: onDigestClose  } = useDisclosure();
   const { isOpen: isStatsOpen,   onOpen: onStatsOpen,   onClose: onStatsClose   } = useDisclosure();
   const { isOpen: isTrafficOpen, onOpen: onTrafficOpen, onClose: onTrafficClose } = useDisclosure();
@@ -192,8 +194,9 @@ export default function App() {
                   py={1}
                   zIndex={200}
                 >
+                  {/* About */}
                   <MenuItem
-                    onClick={onDigestOpen}
+                    onClick={onAboutOpen}
                     fontSize="xs"
                     color="brand.ink"
                     bg="white"
@@ -201,66 +204,69 @@ export default function App() {
                     _focus={{ bg: 'brand.paper' }}
                     px={4} py={2.5}
                   >
-                    <HStack spacing={2}>
-                      <Box
-                        px={1.5} py="1px"
-                        border="1px solid" borderColor="brand.red"
-                        borderRadius="sm" flexShrink={0}
-                      >
-                        <Text fontSize="2xs" fontWeight="700" color="brand.red"
-                          textTransform="uppercase" letterSpacing="widest">
-                          AI
-                        </Text>
-                      </Box>
-                      <Text>Learning Digest</Text>
-                    </HStack>
+                    About
                   </MenuItem>
-                  <MenuItem
-                    onClick={onStatsOpen}
-                    fontSize="xs"
-                    color="brand.ink"
-                    bg="white"
-                    _hover={{ bg: 'brand.paper' }}
-                    _focus={{ bg: 'brand.paper' }}
-                    px={4} py={2.5}
+
+                  <MenuDivider borderColor="brand.rule" my={1} />
+
+                  {/* Learn group */}
+                  <MenuGroup
+                    title="Learn"
+                    ml={4} mt={1} mb={0}
+                    fontSize="2xs"
+                    fontWeight="700"
+                    color="brand.muted"
+                    textTransform="uppercase"
+                    letterSpacing="widest"
                   >
-                    <HStack spacing={2}>
-                      <Box
-                        px={1.5} py="1px"
-                        border="1px solid" borderColor="brand.muted"
-                        borderRadius="sm" flexShrink={0}
-                      >
-                        <Text fontSize="2xs" fontWeight="700" color="brand.muted"
-                          textTransform="uppercase" letterSpacing="widest">
-                          #
-                        </Text>
-                      </Box>
-                      <Text>Statistics</Text>
-                    </HStack>
-                  </MenuItem>
-                  <MenuItem
-                    onClick={onTrafficOpen}
-                    fontSize="xs"
-                    color="brand.ink"
-                    bg="white"
-                    _hover={{ bg: 'brand.paper' }}
-                    _focus={{ bg: 'brand.paper' }}
-                    px={4} py={2.5}
+                    <MenuItem
+                      onClick={onDigestOpen}
+                      fontSize="xs"
+                      color="brand.ink"
+                      bg="white"
+                      _hover={{ bg: 'brand.paper' }}
+                      _focus={{ bg: 'brand.paper' }}
+                      px={4} py={2.5}
+                    >
+                      Learning Digest
+                    </MenuItem>
+                  </MenuGroup>
+
+                  <MenuDivider borderColor="brand.rule" my={1} />
+
+                  {/* Data group */}
+                  <MenuGroup
+                    title="Data"
+                    ml={4} mt={1} mb={0}
+                    fontSize="2xs"
+                    fontWeight="700"
+                    color="brand.muted"
+                    textTransform="uppercase"
+                    letterSpacing="widest"
                   >
-                    <HStack spacing={2}>
-                      <Box
-                        px={1.5} py="1px"
-                        border="1px solid" borderColor="brand.muted"
-                        borderRadius="sm" flexShrink={0}
-                      >
-                        <Text fontSize="2xs" fontWeight="700" color="brand.muted"
-                          textTransform="uppercase" letterSpacing="widest">
-                          ~
-                        </Text>
-                      </Box>
-                      <Text>Traffic</Text>
-                    </HStack>
-                  </MenuItem>
+                    <MenuItem
+                      onClick={onStatsOpen}
+                      fontSize="xs"
+                      color="brand.ink"
+                      bg="white"
+                      _hover={{ bg: 'brand.paper' }}
+                      _focus={{ bg: 'brand.paper' }}
+                      px={4} py={2.5}
+                    >
+                      Statistics
+                    </MenuItem>
+                    <MenuItem
+                      onClick={onTrafficOpen}
+                      fontSize="xs"
+                      color="brand.ink"
+                      bg="white"
+                      _hover={{ bg: 'brand.paper' }}
+                      _focus={{ bg: 'brand.paper' }}
+                      px={4} py={2.5}
+                    >
+                      Traffic
+                    </MenuItem>
+                  </MenuGroup>
                 </MenuList>
               </Menu>
             </HStack>
@@ -353,7 +359,8 @@ export default function App() {
         </Box>
       </Box>
 
-      <LearningDigestDrawer isOpen={isDigestOpen}  onClose={onDigestClose} />
+      <AboutDrawer           isOpen={isAboutOpen}   onClose={onAboutClose} />
+      <LearningDigestDrawer  isOpen={isDigestOpen}  onClose={onDigestClose} />
       <StatsDrawer           isOpen={isStatsOpen}   onClose={onStatsClose} />
       <TrafficDrawer         isOpen={isTrafficOpen} onClose={onTrafficClose} />
     </Box>

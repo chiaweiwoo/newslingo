@@ -4,7 +4,7 @@
 
 Read Chinese news with English translations side by side — follow current events you already understand while picking up natural English phrasing.
 
-Headlines from **联合早报 (Zaobao)** and **Astro 本地圈** are scraped every 3 hours, translated by Claude, and organised into International / Singapore / Malaysia tabs. The translation pipeline self-improves: a second AI scores each run, distils rules from mistakes, and publishes observations via **Inside AI** (··· menu). **This Week** (··· menu) summarises the past week into topic clusters every Monday.
+Headlines from **联合早报 (Zaobao)** and **Astro 本地圈** are scraped every 3 hours, translated by Claude, and organised into International / Singapore / Malaysia tabs. The translation pipeline self-improves: a second AI scores each run, distils rules from mistakes, and publishes observations via **Inside AI** (··· menu). **This Week** (··· menu) summarises the past 7 days into topic clusters, updated daily.
 
 Tap any English word for a definition · speaker icon reads aloud · share button sends both titles + URL · font size and dark mode in ··· → Preferences.
 
@@ -65,7 +65,7 @@ flowchart LR
 | Frontend | React + TypeScript, Chakra UI, Vite — deployed on Vercel |
 | Backend | Python, Claude Haiku (translate), Claude Sonnet (assess + improve) |
 | Database | Supabase (Postgres) |
-| Jobs | GitHub Actions — aggregation every 3h, digest daily, weekly summary Monday |
+| Jobs | GitHub Actions — aggregation every 3h, digest + This Week summary daily |
 
 ---
 

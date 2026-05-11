@@ -143,9 +143,10 @@ GitHub Actions (cron: daily 08:00 SGT)
        ├── _call_digest()      → Claude Sonnet  → updated bullet-points JSON per region
        └── rotates learning_digest table (deactivates old, inserts new)
 
-GitHub Actions (cron: Monday 08:00 SGT)
+GitHub Actions (cron: daily 09:00 SGT)
   └── weekly_summary.py
-       ├── pulls last 7 days of translated headlines
+       ├── skips if < MIN_NEW_HEADLINES (30) since last run — avoids pointless churn
+       ├── pulls past 7 days of translated headlines (rolling window, not Mon-Sun)
        ├── _call_summary()     → Claude Sonnet  → 5-8 topic clusters with summaries
        └── rotates weekly_summary table (deactivates old, inserts new)
 ```
@@ -172,7 +173,7 @@ GitHub Actions (cron: Monday 08:00 SGT)
 | Assessment | `claude-sonnet-4-6` | Structured output; runs every 3h |
 | Distillation | `claude-sonnet-4-6` | Rule extraction from failures |
 | Inside AI digest | `claude-sonnet-4-6` | Daily; structured summarisation, Sonnet is sufficient |
-| Weekly summary | `claude-sonnet-4-6` | Weekly; editorial judgement, Sonnet is sufficient |
+| This Week summary | `claude-sonnet-4-6` | Daily (rolling 7-day window); Sonnet is sufficient |
 
 **ASSESS_BATCH_SIZE = 20** — Sonnet drops/duplicates items at higher counts. Do not raise.  
 **CLAUDE_BATCH_SIZE = 50** — Translation batch size.

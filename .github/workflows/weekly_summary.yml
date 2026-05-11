@@ -1,7 +1,7 @@
-name: Weekly Summary
+name: This Week Summary
 on:
   schedule:
-    - cron: '0 0 * * 1'  # every Monday at 00:00 UTC (08:00 SGT)
+    - cron: '0 1 * * *'  # daily at 01:00 UTC (09:00 SGT)
   workflow_dispatch:
 
 env:

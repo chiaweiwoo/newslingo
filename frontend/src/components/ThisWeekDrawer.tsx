@@ -33,12 +33,6 @@ const REGIONS: { key: 'International' | 'Malaysia' | 'Singapore'; label: string;
   { key: 'Malaysia',      label: 'Malaysia',       icon: '🇲🇾' },
 ];
 
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-MY', {
-    day: 'numeric', month: 'short', year: 'numeric',
-  });
-}
-
 interface Props {
   isOpen:  boolean;
   onClose: () => void;
@@ -80,9 +74,7 @@ export default function ThisWeekDrawer({ isOpen, onClose }: Props) {
             This Week
           </Text>
           <Text fontSize="xs" color="brand.muted" fontWeight="400" mt={0.5}>
-            {summary
-              ? `${formatDate(summary.week_start)} – ${formatDate(summary.week_end)}`
-              : "The week's most important stories, grouped by region."}
+            The most important stories from the past 7 days.
           </Text>
         </DrawerHeader>
 
@@ -141,7 +133,7 @@ export default function ThisWeekDrawer({ isOpen, onClose }: Props) {
 
               <Divider borderColor="brand.rule" />
               <Text fontSize="2xs" color="brand.muted" textAlign="center" pb={2} lineHeight="1.6">
-                Updated every Monday · covers the past 7 days
+                Updated daily · past 7 days
               </Text>
             </VStack>
           )}

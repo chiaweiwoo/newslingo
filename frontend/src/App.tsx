@@ -16,10 +16,10 @@ const supabase = createClient(
 const PAGE_SIZE = 20;
 type Category = 'International' | 'Malaysia' | 'Singapore';
 
-const TABS: { label: string; value: Category; code: string | null }[] = [
-  { label: 'International', value: 'International', code: null },
-  { label: 'Malaysia',      value: 'Malaysia',      code: 'MY' },
-  { label: 'Singapore',     value: 'Singapore',     code: 'SG' },
+const TABS: { label: string; value: Category; icon: string }[] = [
+  { label: 'International', value: 'International', icon: '🌍' },
+  { label: 'Malaysia',      value: 'Malaysia',      icon: '🇲🇾' },
+  { label: 'Singapore',     value: 'Singapore',     icon: '🇸🇬' },
 ];
 
 function toSlug(date: string) {
@@ -202,11 +202,7 @@ export default function App() {
                   transition="all 0.15s"
                   userSelect="none"
                 >
-                  {tab.code && (
-                    <Text as="span" fontSize="2xs" letterSpacing="widest" mr={1} opacity={0.55}>
-                      {tab.code}
-                    </Text>
-                  )}
+                  <Text as="span" mr={1}>{tab.icon}</Text>
                   {tab.label}
                 </Box>
               );

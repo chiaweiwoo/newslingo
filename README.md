@@ -2,166 +2,70 @@
 
 > 中英双语时事 · Chinese & English bilingual news
 
-A personal learning tool that aggregates Chinese-language news from Malaysian and Singaporean media, translates headlines into English, and classifies them by region — so you can read news you already understand while picking up the proper English terminology used in journalism.
+A personal tool for reading Chinese news alongside English translations — so you can follow current events you already understand while naturally picking up the proper English vocabulary and phrasing used in journalism.
+
+News is pulled from two sources every 3 hours: **联合早报 (Zaobao)**, Singapore's main Chinese newspaper, and **Astro 本地圈**, a Malaysian YouTube news channel. Headlines are translated by AI, organised into International / Malaysia / Singapore tabs, and grouped by date.
+
+The translation pipeline improves itself over time — after each run, a second AI reviews the translations, scores them, and rewrites the prompt rules to fix recurring mistakes. A daily digest summarises what the AI has learned, visible in the app via the **[AI]** button.
 
 <img src="docs/screenshot.jpeg" alt="NewsLingo mobile screenshot" width="320" />
 
 ---
 
-## Features
+## Stack
 
-- **Bilingual headlines** — Chinese original alongside English translation
-- **Category tabs** — International, Malaysia, and Singapore feeds
-- **Date-grouped feed** — chronological, latest first, grouped by date
-- **Infinite scroll** — loads more as you scroll, no button needed
-- **Mobile-first** — designed for phone reading
-- **Auto-updated** — job runs every 3 hours SGT, fetches only new content since last run
-- **Self-improving translation** — quality scores, retry on failure, and dynamic prompts that learn from past mistakes
-- **Learning Digest** — daily AI-generated summary of what the translation pipeline has learned, grouped by region
-
----
-
-## Tech Stack
-
-| Layer | Tools |
-|-------|-------|
-| Frontend | React, TypeScript, Chakra UI, React Query, Vite |
-| Backend | Python, Claude Haiku (translate + classify), Claude Sonnet (assess + distill + digest) |
+| | |
+|---|---|
+| Frontend | React + TypeScript, Chakra UI, Vite — deployed on Vercel |
+| Backend | Python, Claude Haiku (translate), Claude Sonnet (assess + improve) |
 | Database | Supabase (Postgres) |
-| Sources | YouTube Data API v3, Zaobao sitemap scraper |
-| Hosting | Vercel (frontend), GitHub Actions (scheduled jobs) |
+| Jobs | GitHub Actions — aggregation every 3h, digest daily |
 
 ---
 
-## Architecture
+## Running locally
 
-```
- Astro 本地圈 (YouTube API)         联合早报 (Zaobao sitemap)
-        │  incremental, since               │  incremental, since
-        │  last published_at                │  last published_at
-        │                                   │  parallel fetch (10 workers)
-        └──────────────────┬────────────────┘
-                           ▼
-                        job.py  (every 3h)
-                           │
-             ┌─────────────┴─────────────┐
-             ▼                           ▼
-    translate (Haiku)           translate (Haiku)
-    + classify                  category from URL
-    MY / SG / Intl              SG or Intl only
-             └─────────────┬─────────────┘
-                           ▼
-                  assess (Sonnet)
-                  quality score 1–5
-                  + correction suggestion
-                           │
-                 score < 3 → retry once
-                 still failing → insert anyway
-                           │
-                      Supabase
-              (headlines, assessment_logs,
-               prompt_rules, job_runs)
-                           │
-            ┌──────────────┴──────────────┐
-            ▼                             ▼
-  distill rules (Sonnet)        React Frontend → Vercel
-  every successful run
-  → updates prompt_rules
-
-digest.py  (daily 08:00 SGT)
-  reads assessment_logs + prompt_rules
-  → incremental summary by region
-  → learning_digest table
-```
-
----
-
-## Self-Improving Translation Pipeline
-
-Translation quality improves automatically through three layers:
-
-```
-Static prompt (job.py)
-  — foundational rules: agency names, political titles, style
-  — version-controlled, rarely changes
-
-Distilled rules (prompt_rules table)
-  — patterns extracted from failure history by Sonnet
-  — regenerated on every successful run, replaces previous
-
-Few-shot corrections (assessment_logs)
-  — concrete (ZH → correct EN) examples from recent failures
-  — automatically rotates, always reflects the last 5 runs
-```
-
-Every run, Haiku translates using all three layers combined. After each successful run, Sonnet reads the accumulated failure history and distills new rules — so systematic mistakes get permanently fixed without manual prompt editing.
-
-The **Learning Digest** (daily job) incrementally summarises what the pipeline has learned, grouped by International / Malaysia / Singapore. It uses a watermark (`digest_at`) so each run only processes new data since the last digest.
-
----
-
-## Database Tables
-
-| Table | Purpose | Reset on repull? |
-|-------|---------|-----------------|
-| `headlines` | Translated articles, unique on `source_url` | YES |
-| `job_runs` | Per-run audit log: status, duration, item counts | NO |
-| `assessment_logs` | Per-source quality stats: scores, retry counts, failure samples | YES |
-| `prompt_rules` | Distilled translation rules per source, updated every run | YES |
-| `learning_digest` | Daily AI digest of learned patterns, grouped by region | YES |
-| `visits` | Anonymous visit tracking | NO |
-
----
-
-## Sources
-
-| Channel | Country | Categories | Classification |
-|---------|---------|------------|----------------|
-| Astro 本地圈 | Malaysia | Malaysia / Singapore / International | LLM (Haiku) — sequential: Malaysia → Singapore → International |
-| 联合早报 | Singapore | Singapore / International | URL-based, deterministic — see [CLAUDE.md](./CLAUDE.md) |
-
-**Zaobao scope:** only `/news/singapore/` and `/news/world/` sections are scraped. China and SEA sections are out of scope.
-
-**Astro scope:** Singapore classification is rare (Astro is a Malaysian channel). Malaysia-Singapore bilateral stories classify as Malaysia. SEA regional news (Thailand, Indonesia, etc.) classifies as International.
-
----
-
-## GitHub Actions Workflows
-
-| Workflow | Schedule | What it does |
-|----------|----------|--------------|
-| `Aggregate` | Every 3h SGT | Scrape → translate → assess → distill → upsert |
-| `Learning Digest` | Daily 08:00 SGT | Incremental digest from assessment history |
-| `test` | Every push to main | Ruff lint + pytest (gates the Aggregate job) |
-| `keep-alive` | Weekly Monday | Keeps GitHub Actions active |
-
----
-
-## Testing
-
-The project has a pytest suite that runs on every push to `main`. The Aggregate job is **gated on tests passing** — broken code never reaches production.
+**Prerequisites:** Python 3.12+, Node 18+, `uv` ([install](https://docs.astral.sh/uv/))
 
 ```bash
-uv sync --group dev
-uv run pytest -v
-uv run pytest tests/test_invariants.py  # invariant checks only
+# Backend deps
+uv sync
+
+# Frontend deps
+cd frontend && npm install
 ```
 
-| Test file | What it covers |
-|---|---|
-| `test_zaobao_scraper.py` | URL→category mapping, sitemap regex (2 sections: singapore + world), audio-brief filter |
-| `test_astro_scraper.py` | YouTube JSON → row schema, title cleaning, lookback window |
-| `test_call_claude.py` | `_call_claude` with mocked responses: clean JSON, code-fenced, truncated, prose-wrapped, length mismatch, prefill on/off |
-| `test_invariants.py` | Architectural invariants: Zaobao classification is URL-based, Astro classification is LLM-based, prefill respects per-model support |
+Copy `.env.example` to `.env` and fill in:
+```
+SUPABASE_URL=
+SUPABASE_SERVICE_KEY=
+ANTHROPIC_API_KEY=
+YOUTUBE_API_KEY=
+```
+
+Copy `frontend/.env.example` to `frontend/.env` and fill in:
+```
+VITE_SUPABASE_URL=
+VITE_SUPABASE_ANON_KEY=
+```
+
+```bash
+# Run the aggregation job once
+uv run job.py
+
+# Run the daily digest
+uv run digest.py
+
+# Start the frontend dev server
+cd frontend && npm run dev
+```
 
 ---
 
-## Hard Invariants
+## Tests
 
-See [CLAUDE.md](./CLAUDE.md) for the full list. Key ones:
+```bash
+uv run pytest -v
+```
 
-1. Zaobao category is set from URL — never from the LLM
-2. Zaobao scrapes only `singapore` and `world` sections — china and sea are out of scope
-3. Astro category is filled by the LLM with three options: Malaysia / Singapore / International
-4. `use_prefill=True` for Haiku translation; `use_prefill=False` for Sonnet assessment/distillation
-5. Batch iteration is defensive — never index `batch[j]` from a `results` loop
+Tests cover URL→category mapping, scraper output schema, Claude JSON parsing, and architectural invariants. The aggregation job is gated on tests passing — broken code never reaches production.

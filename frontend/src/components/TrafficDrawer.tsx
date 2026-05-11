@@ -13,12 +13,11 @@ const supabase = createClient(
 );
 
 interface TrafficData {
-  total:          number;
-  uniqueVisitors: number;   // distinct IPs — best proxy for unique users without auth
-  mobileCount:    number;
-  daily:          { label: string; isoDate: string; count: number }[];
-  countries:      { country: string; unique: number }[];
-  hasCountry:     boolean;
+  total:       number;
+  mobileCount: number;
+  daily:       { label: string; isoDate: string; count: number }[];
+  countries:   { country: string; count: number }[];
+  hasCountry:  boolean;
 }
 
 async function fetchTraffic(): Promise<TrafficData> {
@@ -26,14 +25,11 @@ async function fetchTraffic(): Promise<TrafficData> {
 
   const { data: rows } = await supabase
     .from('visits')
-    .select('visited_at, is_mobile, country, ip')
+    .select('visited_at, is_mobile, country')
     .gte('visited_at', since)
     .order('visited_at', { ascending: false });
 
   const visits = rows || [];
-
-  // Unique visitors — distinct IPs
-  const uniqueVisitors = new Set(visits.map(r => r.ip).filter(Boolean)).size;
 
   // Daily counts (last 14 days)
   const dayMap: Record<string, { count: number; iso: string }> = {};
@@ -52,22 +48,21 @@ async function fetchTraffic(): Promise<TrafficData> {
   // Mobile vs desktop
   const mobileCount = visits.filter(r => r.is_mobile).length;
 
-  // Unique visitors per country — distinct IPs per country
-  const countryIpMap: Record<string, Set<string>> = {};
+  // Visits per country
+  const countryMap: Record<string, number> = {};
   let hasCountry = false;
   for (const r of visits) {
-    if (r.country && r.ip) {
+    if (r.country) {
       hasCountry = true;
-      if (!countryIpMap[r.country]) countryIpMap[r.country] = new Set();
-      countryIpMap[r.country].add(r.ip);
+      countryMap[r.country] = (countryMap[r.country] || 0) + 1;
     }
   }
-  const countries = Object.entries(countryIpMap)
-    .map(([country, ips]) => ({ country, unique: ips.size }))
-    .sort((a, b) => b.unique - a.unique)
+  const countries = Object.entries(countryMap)
+    .map(([country, count]) => ({ country, count }))
+    .sort((a, b) => b.count - a.count)
     .slice(0, 10);
 
-  return { total: visits.length, uniqueVisitors, mobileCount, daily, countries, hasCountry };
+  return { total: visits.length, mobileCount, daily, countries, hasCountry };
 }
 
 interface Props {
@@ -119,14 +114,8 @@ export default function TrafficDrawer({ isOpen, onClose }: Props) {
                   Last 30 Days
                 </Text>
                 <HStack justify="space-between" mb={1.5}>
-                  <Text fontSize="xs" color="brand.muted">Unique visitors</Text>
-                  <Text fontSize="xs" fontWeight="700" color="brand.ink">
-                    {traffic.uniqueVisitors.toLocaleString()}
-                  </Text>
-                </HStack>
-                <HStack justify="space-between" mb={1.5}>
                   <Text fontSize="xs" color="brand.muted">Total visits</Text>
-                  <Text fontSize="xs" color="brand.ink">
+                  <Text fontSize="xs" fontWeight="700" color="brand.ink">
                     {traffic.total.toLocaleString()}
                   </Text>
                 </HStack>
@@ -205,14 +194,14 @@ export default function TrafficDrawer({ isOpen, onClose }: Props) {
                       </Text>
                       <Text fontSize="2xs" fontWeight="700" color="brand.muted"
                         textTransform="uppercase" letterSpacing="wider">
-                        Unique visitors
+                        Visits
                       </Text>
                     </HStack>
                     <Divider borderColor="brand.rule" />
                     {traffic.countries.map(c => (
                       <HStack key={c.country} justify="space-between">
                         <Text fontSize="xs" color="brand.muted">{c.country}</Text>
-                        <Text fontSize="xs" color="brand.ink">{c.unique}</Text>
+                        <Text fontSize="xs" color="brand.ink">{c.count}</Text>
                       </HStack>
                     ))}
                   </VStack>
@@ -221,7 +210,7 @@ export default function TrafficDrawer({ isOpen, onClose }: Props) {
 
               <Divider borderColor="brand.rule" />
               <Text fontSize="2xs" color="brand.muted" textAlign="center" pb={2} lineHeight="1.6">
-                Unique visitors = distinct IPs. One person visiting multiple times counts once.
+                Each page load counts as one visit.
               </Text>
 
             </VStack>

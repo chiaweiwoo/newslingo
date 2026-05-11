@@ -10,8 +10,8 @@ export default function HeadlineCard({ headline }: { headline: any }) {
   return (
     <HStack
       align="start"
-      spacing={3}
-      p={3}
+      spacing={2}
+      p={2}
       bg="white"
       borderRadius="xl"
       boxShadow="xs"
@@ -23,23 +23,23 @@ export default function HeadlineCard({ headline }: { headline: any }) {
           src={headline.thumbnail_url}
           alt={headline.title_zh}
           borderRadius="md"
-          w="96px"
-          h="54px"
+          w="80px"
+          h="45px"
           objectFit="cover"
         />
       </Link>
 
       <Box flex={1} minW={0}>
         <Link href={articleUrl} isExternal _hover={{ textDecoration: 'none' }}>
-          <Text fontSize="sm" fontWeight="bold" lineHeight="1.4" color="gray.800"
-            _hover={{ color: 'red.500' }} transition="color 0.1s">
+          <Text fontSize="sm" fontWeight="bold" lineHeight="1.35" color="gray.800"
+            _hover={{ color: 'red.500' }} transition="color 0.1s" noOfLines={2}>
             {headline.title_zh}
           </Text>
         </Link>
-        <Text fontSize="xs" color="gray.500" lineHeight="1.5" mt={0.5}>
+        <Text fontSize="xs" color="gray.500" lineHeight="1.4" mt={0.5} noOfLines={1}>
           {headline.title_en}
         </Text>
-        <HStack spacing={2} mt={1.5}>
+        <HStack spacing={2} mt={0.5}>
           <Badge colorScheme="red" variant="subtle" fontSize="2xs" borderRadius="full" px={1.5}>
             {headline.channel}
           </Badge>

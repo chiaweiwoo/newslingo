@@ -16,10 +16,10 @@ const supabase = createClient(
 const PAGE_SIZE = 20;
 type Category = 'International' | 'Malaysia' | 'Singapore';
 
-const TABS: { label: string; value: Category; icon: string }[] = [
-  { label: 'International', value: 'International', icon: '🌍' },
-  { label: 'Malaysia',      value: 'Malaysia',      icon: '🇲🇾' },
-  { label: 'Singapore',     value: 'Singapore',     icon: '🇸🇬' },
+const TABS: { label: string; value: Category; code: string | null }[] = [
+  { label: 'International', value: 'International', code: null },
+  { label: 'Malaysia',      value: 'Malaysia',      code: 'MY' },
+  { label: 'Singapore',     value: 'Singapore',     code: 'SG' },
 ];
 
 function toSlug(date: string) {
@@ -70,7 +70,7 @@ export default function App() {
     track();
   }, []);
 
-  // Last job execution time for "Updated X ago"
+  // Last job execution time
   const { data: latestDate } = useQuery({
     queryKey: ['latest-date'],
     queryFn: async (): Promise<string | null> => {
@@ -129,36 +129,46 @@ export default function App() {
   const grouped = groupByDate(headlines);
 
   return (
-    <Box minH="100vh" bg="gray.50">
+    <Box minH="100vh" bg="brand.paper">
 
       {/* Sticky header */}
       <Box
         position="sticky" top={0} zIndex={100}
-        bg="gray.900" borderBottom="3px solid" borderColor="red.500"
+        bg="#111111" borderBottom="3px solid" borderColor="brand.red"
       >
         <Box maxW="600px" mx="auto" px={4}>
 
           {/* Title row */}
           <Flex align="center" justify="space-between" pt={3} pb={2}>
             <Heading
-              size="md" color="white" fontWeight="black"
-              letterSpacing="-0.5px" fontFamily="'Georgia', serif"
+              size="md" color="white" fontWeight="700"
+              letterSpacing="-0.3px"
+              fontFamily="'Noto Serif SC', 'Georgia', serif"
             >
               NewsLingo
             </Heading>
-            <HStack spacing={3}>
-              <Text
-                fontSize="2xs" color="gray.500" cursor="pointer"
+            <HStack spacing={3} align="center">
+              {/* AI — editorial label, no emoji */}
+              <Box
+                as="button"
                 onClick={onInsightsOpen}
-                _hover={{ color: 'gray.300' }}
-                transition="color 0.15s"
-                title="How AI is improving"
+                px={1.5} py="2px"
+                border="1px solid"
+                borderColor="brand.red"
+                color="brand.red"
+                fontSize="2xs"
+                fontWeight="700"
+                letterSpacing="widest"
+                textTransform="uppercase"
+                borderRadius="sm"
+                _hover={{ bg: 'brand.red', color: 'white' }}
+                transition="all 0.15s"
               >
-                🧠 AI
-              </Text>
+                AI
+              </Box>
               {latestDate && (
-                <Text fontSize="2xs" color="gray.500" letterSpacing="wide">
-                  Updated {timeAgo(latestDate)}
+                <Text fontSize="2xs" color="gray.600" letterSpacing="0.03em">
+                  {timeAgo(latestDate)}
                 </Text>
               )}
             </HStack>
@@ -177,14 +187,20 @@ export default function App() {
                   cursor="pointer"
                   onClick={() => setActiveTab(tab.value)}
                   borderBottom="2px solid"
-                  borderColor={active ? 'red.400' : 'transparent'}
+                  borderColor={active ? 'brand.red' : 'transparent'}
                   color={active ? 'white' : 'gray.500'}
-                  fontSize="sm"
-                  fontWeight={active ? 'bold' : 'normal'}
+                  fontSize="xs"
+                  fontWeight={active ? '700' : '400'}
+                  letterSpacing="0.02em"
                   transition="all 0.15s"
                   userSelect="none"
                 >
-                  {tab.icon} {tab.label}
+                  {tab.code && (
+                    <Text as="span" fontSize="2xs" letterSpacing="widest" mr={1} opacity={0.55}>
+                      {tab.code}
+                    </Text>
+                  )}
+                  {tab.label}
                 </Box>
               );
             })}
@@ -193,37 +209,38 @@ export default function App() {
       </Box>
 
       {/* Feed */}
-      <Box maxW="600px" mx="auto" px={4} pb={16} pt={6}>
+      <Box maxW="600px" mx="auto" px={3} pb={16} pt={4}>
         {isLoading ? (
           <Center py={20}>
             <VStack spacing={3}>
-              <Spinner size="lg" color="red.500" thickness="3px" />
-              <Text fontSize="sm" color="gray.400">Loading…</Text>
+              <Spinner size="lg" color="brand.red" thickness="3px" />
+              <Text fontSize="sm" color="brand.muted">Loading…</Text>
             </VStack>
           </Center>
         ) : headlines.length === 0 ? (
           <Center py={20}>
             <VStack spacing={2}>
               <Text fontSize="2xl">📭</Text>
-              <Text fontSize="sm" color="gray.500">No headlines yet</Text>
+              <Text fontSize="sm" color="brand.muted">No headlines yet</Text>
             </VStack>
           </Center>
         ) : (
-          <VStack spacing={8} align="stretch">
+          <VStack spacing={6} align="stretch">
             {Object.entries(grouped).map(([date, items]) => (
               <Box key={date} id={toSlug(date)}>
-                <Flex align="center" gap={3} mb={4}>
-                  <Divider borderColor="gray.200" />
+                {/* Date separator — all-caps editorial rule */}
+                <Flex align="center" gap={3} mb={3}>
+                  <Divider borderColor="brand.rule" />
                   <Text
-                    fontSize="2xs" fontWeight="bold" color="gray.400"
+                    fontSize="2xs" fontWeight="700" color="brand.muted"
                     whiteSpace="nowrap" textTransform="uppercase" letterSpacing="widest"
                     flexShrink={0}
                   >
                     {date}
                   </Text>
-                  <Divider borderColor="gray.200" />
+                  <Divider borderColor="brand.rule" />
                 </Flex>
-                <VStack spacing={3} align="stretch">
+                <VStack spacing={2} align="stretch">
                   {items.map(h => <HeadlineCard key={h.id} headline={h} />)}
                 </VStack>
               </Box>
@@ -234,19 +251,20 @@ export default function App() {
         {/* Infinite scroll sentinel */}
         <Box ref={sentinelRef} pt={8}>
           {isFetchingNextPage && (
-            <Center><Spinner size="sm" color="gray.300" /></Center>
+            <Center><Spinner size="sm" color="brand.muted" /></Center>
           )}
           {!hasNextPage && headlines.length > 0 && (
             <Center>
-              <HStack spacing={3} color="gray.300">
+              <HStack spacing={3} color="brand.rule">
                 <Divider w="50px" />
-                <Text fontSize="xs">you're all caught up</Text>
+                <Text fontSize="xs" color="brand.muted">you're all caught up</Text>
                 <Divider w="50px" />
               </HStack>
             </Center>
           )}
         </Box>
       </Box>
+
       <AIInsightsDrawer isOpen={isInsightsOpen} onClose={onInsightsClose} />
     </Box>
   );

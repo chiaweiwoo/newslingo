@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   Drawer, DrawerBody, DrawerHeader, DrawerOverlay, DrawerContent,
-  DrawerCloseButton, Box, Text, VStack, HStack, Badge, Spinner,
+  DrawerCloseButton, Box, Text, VStack, HStack, Spinner,
   Center, Divider,
 } from '@chakra-ui/react';
 import { useQuery } from '@tanstack/react-query';
@@ -55,19 +55,30 @@ export default function AIInsightsDrawer({ isOpen, onClose }: Props) {
   return (
     <Drawer isOpen={isOpen} placement="bottom" onClose={onClose}>
       <DrawerOverlay />
-      <DrawerContent maxH="72vh" borderTopRadius="2xl">
-        <DrawerCloseButton color="gray.400" mt={1} />
+      <DrawerContent maxH="72vh" borderTopRadius="lg" bg="brand.paper">
+        <DrawerCloseButton color="brand.muted" mt={1} />
 
-        <DrawerHeader borderBottom="1px solid" borderColor="gray.100" pb={3} pt={4}>
+        <DrawerHeader borderBottom="1px solid" borderColor="brand.rule" pb={3} pt={4}>
           <HStack spacing={2.5} align="start">
-            <Text fontSize="xl" lineHeight="1">🧠</Text>
+            {/* Editorial AI badge */}
+            <Box
+              px={1.5} py="2px" mt="3px"
+              border="1px solid" borderColor="brand.red"
+              borderRadius="sm" flexShrink={0}
+            >
+              <Text fontSize="2xs" fontWeight="700" letterSpacing="widest"
+                color="brand.red" textTransform="uppercase">
+                AI
+              </Text>
+            </Box>
             <Box>
-              <Text fontSize="md" fontWeight="bold" color="gray.800" lineHeight="1.2">
+              <Text fontSize="md" fontWeight="700" color="brand.ink" lineHeight="1.2"
+                fontFamily="'Noto Serif SC', 'Georgia', serif">
                 How AI is Improving
               </Text>
-              <Text fontSize="xs" color="gray.400" fontWeight="normal" mt={0.5}>
-                After each batch of runs, the AI reviews its own translation mistakes
-                and writes rules to do better next time.
+              <Text fontSize="xs" color="brand.muted" fontWeight="400" mt={0.5}>
+                After each run, the AI reviews its own translation mistakes
+                and writes new rules to do better next time.
               </Text>
             </Box>
           </HStack>
@@ -76,14 +87,14 @@ export default function AIInsightsDrawer({ isOpen, onClose }: Props) {
         <DrawerBody py={4} overflowY="auto">
           {isLoading ? (
             <Center py={10}>
-              <Spinner color="red.500" size="md" />
+              <Spinner color="brand.red" size="md" />
             </Center>
           ) : !rules?.length ? (
             <Center py={10}>
               <VStack spacing={2}>
                 <Text fontSize="2xl">🌱</Text>
-                <Text fontSize="sm" color="gray.500" fontWeight="medium">Still learning…</Text>
-                <Text fontSize="xs" color="gray.400" textAlign="center" maxW="220px">
+                <Text fontSize="sm" color="brand.ink" fontWeight="600">Still learning…</Text>
+                <Text fontSize="xs" color="brand.muted" textAlign="center" maxW="220px">
                   Rules will appear after the next job run completes.
                 </Text>
               </VStack>
@@ -98,21 +109,22 @@ export default function AIInsightsDrawer({ isOpen, onClose }: Props) {
                 return (
                   <Box key={rule.source}>
                     <HStack mb={2.5} justify="space-between" align="center">
-                      <Badge
-                        colorScheme="red" variant="subtle"
-                        borderRadius="full" px={2} py={0.5} fontSize="xs"
+                      {/* Source — styled as editorial kicker, not pill badge */}
+                      <Text
+                        fontSize="xs" fontWeight="700" color="brand.red"
+                        textTransform="uppercase" letterSpacing="wider"
                       >
                         {SOURCE_LABEL[rule.source] ?? rule.source}
-                      </Badge>
-                      <Text fontSize="2xs" color="gray.400">
-                        Updated {timeAgo(rule.generated_at)} · run #{rule.run_count_at}
+                      </Text>
+                      <Text fontSize="2xs" color="brand.muted">
+                        {timeAgo(rule.generated_at)} · run #{rule.run_count_at}
                       </Text>
                     </HStack>
                     <VStack align="stretch" spacing={2}>
                       {bullets.map((b, i) => (
                         <HStack key={i} align="start" spacing={2}>
-                          <Text fontSize="xs" color="red.400" mt="2px" flexShrink={0}>•</Text>
-                          <Text fontSize="xs" color="gray.700" lineHeight="1.6">{b}</Text>
+                          <Text fontSize="xs" color="brand.red" mt="2px" flexShrink={0}>•</Text>
+                          <Text fontSize="xs" color="brand.ink" lineHeight="1.6">{b}</Text>
                         </HStack>
                       ))}
                     </VStack>
@@ -120,8 +132,8 @@ export default function AIInsightsDrawer({ isOpen, onClose }: Props) {
                 );
               })}
 
-              <Divider borderColor="gray.100" />
-              <Text fontSize="2xs" color="gray.400" textAlign="center" pb={2} lineHeight="1.6">
+              <Divider borderColor="brand.rule" />
+              <Text fontSize="2xs" color="brand.muted" textAlign="center" pb={2} lineHeight="1.6">
                 These rules are automatically injected into the AI's prompt on every run,
                 so translations keep improving over time.
               </Text>

@@ -127,6 +127,12 @@ GitHub Actions (cron: daily 08:00 SGT)
        ├── pulls delta assessment_logs failures + prompt_rules since watermark
        ├── _call_digest()      → Claude Sonnet  → updated bullet-points JSON per region
        └── rotates learning_digest table (deactivates old, inserts new)
+
+GitHub Actions (cron: Monday 08:00 SGT)
+  └── weekly_summary.py
+       ├── pulls last 7 days of translated headlines
+       ├── _call_summary()     → Claude Sonnet  → 5-8 topic clusters with summaries
+       └── rotates weekly_summary table (deactivates old, inserts new)
 ```
 
 ## Supabase Tables
@@ -136,7 +142,8 @@ GitHub Actions (cron: daily 08:00 SGT)
 | `headlines` | YES | All article rows |
 | `assessment_logs` | YES | Per-run quality scores |
 | `prompt_rules` | YES | Distilled LLM rules |
-| `learning_digest` | YES | AI-generated digest per region; rotated by digest.py |
+| `learning_digest` | YES | Inside AI digest; rotated by digest.py |
+| `weekly_summary` | YES | This Week topic clusters; rotated by weekly_summary.py |
 | `job_runs` | NO | Audit log — preserve |
 | `visits` | NO | Frontend analytics — preserve; includes `ip`, `country`, `is_mobile` |
 
@@ -149,6 +156,7 @@ GitHub Actions (cron: daily 08:00 SGT)
 | Translation | `claude-haiku-4-5-20251001` | Fast, cheap |
 | Assessment | `claude-sonnet-4-6` | More reliable on structured output |
 | Distillation | `claude-sonnet-4-6` | Rule extraction from failures |
+| Weekly summary | `claude-sonnet-4-6` | Topic clustering from 7-day headlines |
 
 **ASSESS_BATCH_SIZE = 20** — Sonnet drops/duplicates items at higher counts. Do not raise.  
 **CLAUDE_BATCH_SIZE = 50** — Translation batch size.

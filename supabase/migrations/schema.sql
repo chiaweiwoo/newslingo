@@ -1,5 +1,5 @@
 -- NewsLingo — complete current schema
--- Last updated: 2026-05
+-- Last updated: 2026-05-12
 -- Run in Supabase SQL Editor for a fresh setup.
 -- For existing databases all these changes are already applied.
 
@@ -74,6 +74,19 @@ CREATE TABLE IF NOT EXISTS public.learning_digest (
 
 CREATE INDEX IF NOT EXISTS idx_learning_digest_active ON public.learning_digest (active, created_at DESC);
 
+-- ── weekly_summary ───────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS public.weekly_summary (
+    id          UUID        DEFAULT gen_random_uuid() PRIMARY KEY,
+    created_at  TIMESTAMPTZ DEFAULT now() NOT NULL,
+    week_start  DATE        NOT NULL,
+    week_end    DATE        NOT NULL,
+    payload     JSONB       NOT NULL,   -- {topics:[{title,summary,region},...]}
+    active      BOOLEAN     DEFAULT true NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_weekly_summary_active ON public.weekly_summary (active, created_at DESC);
+
 -- ── visits ────────────────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS public.visits (
@@ -96,6 +109,7 @@ ALTER TABLE public.job_runs        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.assessment_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.prompt_rules    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.learning_digest ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.weekly_summary  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.visits          ENABLE ROW LEVEL SECURITY;
 
 -- headlines — public read
@@ -114,9 +128,13 @@ CREATE POLICY "assessment_logs_anon_select"
 CREATE POLICY "prompt_rules_anon_select"
   ON public.prompt_rules FOR SELECT TO anon USING (true);
 
--- learning_digest — public read (Learning Digest drawer)
+-- learning_digest — public read (Inside AI drawer)
 CREATE POLICY "learning_digest_anon_select"
   ON public.learning_digest FOR SELECT TO anon USING (true);
+
+-- weekly_summary — public read (This Week drawer)
+CREATE POLICY "weekly_summary_anon_select"
+  ON public.weekly_summary FOR SELECT TO anon USING (true);
 
 -- visits — anon may insert (visit tracking) and select (Traffic drawer)
 -- Note: raw IPs are readable via anon key — acceptable for a personal project.

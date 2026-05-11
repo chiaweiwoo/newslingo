@@ -8,6 +8,8 @@ News is pulled from two sources every 3 hours: **联合早报 (Zaobao)**, Singap
 
 The translation pipeline improves itself over time — after each run, a second AI reviews the translations, scores them, and rewrites the prompt rules to fix recurring mistakes. The **Inside AI** section in the ··· menu shows a daily digest of what the AI gets right, wrong, and is improving — presented as concise bullet observations per region.
 
+**This Week** (··· menu) runs every Monday and presents the past week's news as 5–8 topic clusters — important stories grouped by theme with 2–3 sentence summaries, across all three regions.
+
 Reader features: tap any English word for an inline definition, tap the speaker icon to hear the headline read aloud, tap the share icon to share the headline (both titles + URL) via the native share sheet. Font size and dark mode are configurable via the ··· menu.
 
 <img src="docs/screenshot.jpeg" alt="NewsLingo mobile screenshot" width="320" />
@@ -21,7 +23,7 @@ Reader features: tap any English word for an inline definition, tap the speaker 
 | Frontend | React + TypeScript, Chakra UI, Vite — deployed on Vercel |
 | Backend | Python, Claude Haiku (translate), Claude Sonnet (assess + improve) |
 | Database | Supabase (Postgres) |
-| Jobs | GitHub Actions — aggregation every 3h, digest daily |
+| Jobs | GitHub Actions — aggregation every 3h, digest daily, weekly summary Monday |
 
 ---
 

@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 
 import anthropic
 from dotenv import load_dotenv
+
 from supabase import create_client
 
 sys.stdout.reconfigure(encoding="utf-8")

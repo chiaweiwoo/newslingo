@@ -220,7 +220,19 @@ export default function App() {
                     _focus={{ bg: 'brand.paper' }}
                     px={4} py={2.5}
                   >
-                    Statistics
+                    <HStack spacing={2}>
+                      <Box
+                        px={1.5} py="1px"
+                        border="1px solid" borderColor="brand.muted"
+                        borderRadius="sm" flexShrink={0}
+                      >
+                        <Text fontSize="2xs" fontWeight="700" color="brand.muted"
+                          textTransform="uppercase" letterSpacing="widest">
+                          #
+                        </Text>
+                      </Box>
+                      <Text>Statistics</Text>
+                    </HStack>
                   </MenuItem>
                 </MenuList>
               </Menu>

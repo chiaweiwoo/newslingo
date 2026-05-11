@@ -634,12 +634,22 @@ def _main() -> None:
             flush=True,
         )
 
-        # ── Distillation (every N successful runs, per source that processed rows) ─
+        # ── Distillation (every N successful runs, or immediately if no rules exist yet) ─
         if status == "success" and sources_processed:
             run_count = _get_successful_run_count()
-            if run_count % DISTILL_EVERY_N == 0:
-                print(f"[distill] run #{run_count} — triggering rule distillation...", flush=True)
-                for src in sources_processed:
+            for src in sources_processed:
+                has_rules = (
+                    supabase.table("prompt_rules")
+                    .select("id", count="exact")
+                    .eq("source", src)
+                    .eq("active", True)
+                    .execute()
+                    .count or 0
+                ) > 0
+                should_distill = (run_count % DISTILL_EVERY_N == 0) or (not has_rules)
+                if should_distill:
+                    reason = f"run #{run_count}" if has_rules else "no rules yet — distilling on first opportunity"
+                    print(f"[distill] {src}: {reason}", flush=True)
                     try:
                         _distill_rules(src, run_count)
                     except Exception as e:

@@ -4,9 +4,9 @@
 
 A personal tool for reading Chinese news alongside English translations — so you can follow current events you already understand while naturally picking up the proper English vocabulary and phrasing used in journalism.
 
-News is pulled from two sources every 3 hours: **联合早报 (Zaobao)**, Singapore's main Chinese newspaper, and **Astro 本地圈**, a Malaysian YouTube news channel. Headlines are translated by AI, organised into International / Malaysia / Singapore tabs, and grouped by date.
+News is pulled from two sources every 3 hours: **联合早报 (Zaobao)**, Singapore's main Chinese newspaper, and **Astro 本地圈**, a Malaysian YouTube news channel. Headlines are translated by AI, organised into International / Singapore / Malaysia tabs, and grouped by date.
 
-The translation pipeline improves itself over time — after each run, a second AI reviews the translations, scores them, and rewrites the prompt rules to fix recurring mistakes. A daily digest summarises what the AI has learned, visible in the app via the **[AI]** button.
+The translation pipeline improves itself over time — after each run, a second AI reviews the translations, scores them, and rewrites the prompt rules to fix recurring mistakes. A daily digest summarises what the AI has learned, accessible via the **···** overflow menu in the app.
 
 <img src="docs/screenshot.jpeg" alt="NewsLingo mobile screenshot" width="320" />
 
@@ -14,7 +14,7 @@ The translation pipeline improves itself over time — after each run, a second 
 
 ## Stack
 
-| | |
+| Layer | Technology |
 |---|---|
 | Frontend | React + TypeScript, Chakra UI, Vite — deployed on Vercel |
 | Backend | Python, Claude Haiku (translate), Claude Sonnet (assess + improve) |

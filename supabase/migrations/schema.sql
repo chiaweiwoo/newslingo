@@ -62,6 +62,18 @@ CREATE TABLE IF NOT EXISTS public.prompt_rules (
     active        BOOLEAN     DEFAULT true
 );
 
+-- ── learning_digest ──────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS public.learning_digest (
+    id          BIGSERIAL   PRIMARY KEY,
+    created_at  TIMESTAMPTZ DEFAULT now(),
+    digest_at   TIMESTAMPTZ NOT NULL,   -- watermark: all history up to this point is included
+    payload     JSONB       NOT NULL,   -- {international:{summary,examples}, malaysia:{...}, singapore:{...}}
+    active      BOOLEAN     DEFAULT true
+);
+
+CREATE INDEX IF NOT EXISTS idx_learning_digest_active ON public.learning_digest (active, created_at DESC);
+
 -- ── visits ────────────────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS public.visits (

@@ -6,7 +6,7 @@ import {
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { createClient } from '@supabase/supabase-js';
 import HeadlineCard from './components/HeadlineCard';
-import AIInsightsDrawer from './components/AIInsightsDrawer';
+import LearningDigestDrawer from './components/LearningDigestDrawer';
 
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
@@ -96,12 +96,18 @@ export default function App() {
   } = useInfiniteQuery({
     queryKey: ['headlines', activeTab],
     queryFn: async ({ pageParam = 0 }) => {
-      const { data } = await supabase
+      let q = supabase
         .from('headlines')
         .select('*')
         .eq('category', activeTab)
-        .order('published_at', { ascending: false })
-        .range(pageParam, pageParam + PAGE_SIZE - 1);
+        .order('published_at', { ascending: false });
+      // Exclude Zaobao China + SEA sections from the International tab (UI filter, backend untouched)
+      if (activeTab === 'International') {
+        q = q
+          .not('source_url', 'like', '%/news/china/%')
+          .not('source_url', 'like', '%/news/sea/%');
+      }
+      const { data } = await q.range(pageParam, pageParam + PAGE_SIZE - 1);
       return data || [];
     },
     initialPageParam: 0,
@@ -265,7 +271,7 @@ export default function App() {
         </Box>
       </Box>
 
-      <AIInsightsDrawer isOpen={isInsightsOpen} onClose={onInsightsClose} />
+      <LearningDigestDrawer isOpen={isInsightsOpen} onClose={onInsightsClose} />
     </Box>
   );
 }

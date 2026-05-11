@@ -1,4 +1,4 @@
-name: NewsLingo Job
+name: Aggregate
 on:
   schedule:
     - cron: '0 1,4,7,10,13,16,19,22 * * *'  # every 3h SGT: 9am,12pm,3pm,6pm,9pm,12am,3am,6am (UTC+8)

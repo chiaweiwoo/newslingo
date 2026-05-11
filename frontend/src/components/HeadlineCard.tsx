@@ -1,61 +1,50 @@
 import React from 'react';
-import { Box, HStack, Image, Text, Link } from '@chakra-ui/react';
+import { Box, HStack, Text, Link } from '@chakra-ui/react';
 
-export default function HeadlineCard({ headline }: { headline: any }) {
+function timeAgo(dateStr: string): string {
+  const seconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
+  if (seconds < 60) return 'just now';
+  const m = Math.floor(seconds / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  return `${d}d ago`;
+}
+
+interface Props {
+  headline: any;
+  isLast?: boolean;
+}
+
+export default function HeadlineCard({ headline, isLast = false }: Props) {
   const articleUrl = headline.source_url || `https://www.youtube.com/watch?v=${headline.id}`;
-  const d = new Date(headline.published_at);
-  const stamp =
-    d.toLocaleDateString('en-MY', { day: 'numeric', month: 'short' }) +
-    ' · ' +
-    d.toLocaleTimeString('en-MY', { hour: 'numeric', minute: '2-digit', hour12: true });
 
   return (
-    <HStack
-      align="start"
-      spacing={2}
-      px={2}
-      py={1.5}
-      bg="white"
-      borderRadius="md"
-      boxShadow="xs"
-      _hover={{ boxShadow: 'sm' }}
-      transition="box-shadow 0.15s"
+    <Link
+      href={articleUrl} isExternal
+      _hover={{ textDecoration: 'none' }}
+      display="block"
     >
-      {/* Left column: thumbnail + channel + timestamp */}
-      <Box flexShrink={0} w="56px" textAlign="center">
-        <Link href={articleUrl} isExternal>
-          <Image
-            src={headline.thumbnail_url}
-            alt={headline.title_zh}
-            borderRadius="sm"
-            w="56px"
-            h="32px"
-            objectFit="cover"
-          />
-        </Link>
-        <Text
-          fontSize="2xs" color="red.500" fontWeight="semibold"
-          mt={1} lineHeight="1.2" isTruncated
-        >
-          {headline.channel}
+      <Box
+        py={2.5} px={3}
+        borderBottom={isLast ? 'none' : '1px solid'}
+        borderColor="gray.100"
+        _hover={{ bg: 'gray.50' }}
+        transition="background 0.1s"
+      >
+        <Text fontSize="md" fontWeight="bold" color="gray.900" lineHeight="1.3">
+          {headline.title_zh}
         </Text>
-        <Text fontSize="2xs" color="gray.400" lineHeight="1.2" mt={0.5}>
-          {stamp}
-        </Text>
-      </Box>
-
-      {/* Right column: titles only */}
-      <Box flex={1} minW={0}>
-        <Link href={articleUrl} isExternal _hover={{ textDecoration: 'none' }}>
-          <Text fontSize="sm" fontWeight="bold" lineHeight="1.3" color="gray.800"
-            _hover={{ color: 'red.500' }} transition="color 0.1s">
-            {headline.title_zh}
-          </Text>
-        </Link>
-        <Text fontSize="xs" color="gray.500" lineHeight="1.35" mt={0.5}>
+        <Text fontSize="xs" color="gray.600" lineHeight="1.4" mt={1}>
           {headline.title_en}
         </Text>
+        <HStack mt={1.5} spacing={1.5} fontSize="2xs">
+          <Text color="red.500" fontWeight="semibold">{headline.channel}</Text>
+          <Text color="gray.300">·</Text>
+          <Text color="gray.400">{timeAgo(headline.published_at)}</Text>
+        </HStack>
       </Box>
-    </HStack>
+    </Link>
   );
 }

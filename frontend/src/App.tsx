@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   Box, Flex, Heading, Spinner, Text, VStack, Divider, HStack, Center,
   useDisclosure, Menu, MenuButton, MenuDivider, MenuGroup, MenuList, MenuItem,
@@ -126,12 +126,20 @@ export default function App() {
       lastPage.length < PAGE_SIZE ? undefined : allPages.flat().length,
   });
 
-  // Measure navbar height so sticky date headers sit flush below it
+  // Measure navbar height so sticky date headers sit flush below it.
+  // useLayoutEffect reads the real height synchronously before the first paint
+  // so there is never a wrong-offset frame. ResizeObserver handles future changes
+  // (e.g. font-load, zoom).
+  useLayoutEffect(() => {
+    if (headerRef.current) {
+      setHeaderHeight(headerRef.current.offsetHeight);
+    }
+  }, []);
   useEffect(() => {
     const el = headerRef.current;
     if (!el) return;
     const ro = new ResizeObserver(([entry]) => {
-      setHeaderHeight(entry.contentRect.height);
+      setHeaderHeight(Math.round(entry.contentRect.height));
     });
     ro.observe(el);
     return () => ro.disconnect();
@@ -344,10 +352,8 @@ export default function App() {
                   bg="brand.paper"
                   align="center"
                   gap={3}
-                  mx={-3} px={3}
-                  py={2}
-                  mb={2}
-                  boxShadow="0 2px 6px -2px rgba(0,0,0,0.06)"
+                  pt={2} pb={2}
+                  mb={1}
                 >
                   <Divider borderColor="brand.rule" />
                   <Text

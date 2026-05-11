@@ -105,6 +105,13 @@ GitHub Actions (cron: every 3h)
        ├── assess_translations() → Claude Sonnet → scores 1–5, retry if <3
        ├── _distill_rules()    → Claude Sonnet  → every successful run, improves prompt_rules
        └── upsert_rows()       → Supabase       → headlines table
+
+GitHub Actions (cron: daily 08:00 SGT)
+  └── digest.py
+       ├── loads previous learning_digest + digest_at watermark
+       ├── pulls delta assessment_logs failures + prompt_rules since watermark
+       ├── _call_digest()      → Claude Sonnet  → updated narrative JSON per region
+       └── rotates learning_digest table (deactivates old, inserts new)
 ```
 
 ## Supabase Tables
@@ -114,8 +121,9 @@ GitHub Actions (cron: every 3h)
 | `headlines` | YES | All article rows |
 | `assessment_logs` | YES | Per-run quality scores |
 | `prompt_rules` | YES | Distilled LLM rules |
+| `learning_digest` | YES | AI-generated digest per region; rotated by digest.py |
 | `job_runs` | NO | Audit log — preserve |
-| `visits` | NO | Frontend analytics — preserve |
+| `visits` | NO | Frontend analytics — preserve; includes `ip`, `country`, `is_mobile` |
 
 ---
 
@@ -159,13 +167,13 @@ uv run pytest tests/test_invariants.py  # invariant checks only
 ```
 
 Tests run on every push to `main` via `.github/workflows/test.yml`.
-The `run-job` workflow is gated on `test` passing — no broken code reaches production.
+The `Aggregate` workflow is gated on `test` passing — no broken code reaches production.
 
 ---
 
 ## Data Reset Procedure
 
 1. Ensure code changes are committed and CI is green.
-2. Delete rows from: `headlines`, `assessment_logs`, `prompt_rules`.
+2. Delete rows from: `headlines`, `assessment_logs`, `prompt_rules`, `learning_digest`.
 3. Trigger `workflow_dispatch` on the job workflow.
 4. Verify classification distribution: `SELECT category, COUNT(*) FROM headlines GROUP BY category`.

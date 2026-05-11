@@ -195,10 +195,10 @@ export default function App() {
             </VStack>
           </Center>
         ) : (
-          <VStack spacing={4} align="stretch">
+          <VStack spacing={3} align="stretch">
             {Object.entries(grouped).map(([date, items]) => (
               <Box key={date} id={toSlug(date)}>
-                <Flex align="center" gap={3} mb={2}>
+                <Flex align="center" gap={3} mb={1.5}>
                   <Divider borderColor="gray.200" />
                   <Text
                     fontSize="2xs" fontWeight="bold" color="gray.400"
@@ -209,7 +209,7 @@ export default function App() {
                   </Text>
                   <Divider borderColor="gray.200" />
                 </Flex>
-                <VStack spacing={1.5} align="stretch">
+                <VStack spacing={1} align="stretch">
                   {items.map(h => <HeadlineCard key={h.id} headline={h} />)}
                 </VStack>
               </Box>

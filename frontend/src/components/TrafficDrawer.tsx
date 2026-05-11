@@ -86,7 +86,7 @@ export default function TrafficDrawer({ isOpen, onClose }: Props) {
   return (
     <Drawer isOpen={isOpen} placement="bottom" onClose={onClose}>
       <DrawerOverlay />
-      <DrawerContent maxH="80vh" maxW="600px" mx="auto" borderTopRadius="lg" bg="brand.paper">
+      <DrawerContent maxH="80vh" style={{ maxWidth: "600px", marginLeft: "auto", marginRight: "auto" }} borderTopRadius="lg" bg="brand.paper">
         <DrawerCloseButton color="brand.muted" mt={1} />
 
         <DrawerHeader borderBottom="1px solid" borderColor="brand.rule" pb={3} pt={4}>

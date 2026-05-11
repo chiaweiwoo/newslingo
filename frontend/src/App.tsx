@@ -21,8 +21,8 @@ type Category = 'International' | 'Malaysia' | 'Singapore';
 
 const TABS: { label: string; value: Category; icon: string }[] = [
   { label: 'International', value: 'International', icon: '🌍' },
-  { label: 'Malaysia',      value: 'Malaysia',      icon: '🇲🇾' },
   { label: 'Singapore',     value: 'Singapore',     icon: '🇸🇬' },
+  { label: 'Malaysia',      value: 'Malaysia',      icon: '🇲🇾' },
 ];
 
 function toSlug(date: string) {

@@ -23,7 +23,14 @@ Tap any English word for a definition · speaker icon reads aloud · share butto
 
 ---
 
-## How it works
+## Stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | React + TypeScript, Chakra UI, Vite — deployed on Vercel |
+| Backend | Python, Claude Haiku (translate), Claude Sonnet (assess + improve + summarise) |
+| Database | Supabase (Postgres) |
+| Jobs | GitHub Actions — aggregation every 3h, digest + This Week summary daily |
 
 ```mermaid
 flowchart LR
@@ -41,9 +48,9 @@ flowchart LR
 
     DB[("Supabase")]
 
-    subgraph scheduled["Scheduled jobs"]
-        DG["Inside AI\nSonnet · daily"]
-        WS["This Week\nSonnet · Monday"]
+    subgraph scheduled["Scheduled jobs · daily"]
+        DG["Inside AI\nSonnet"]
+        WS["This Week\nSonnet"]
     end
 
     FE["🌐 Frontend\nVercel"]
@@ -55,17 +62,6 @@ flowchart LR
     DB <--> WS
     DB --> FE
 ```
-
----
-
-## Stack
-
-| Layer | Technology |
-|---|---|
-| Frontend | React + TypeScript, Chakra UI, Vite — deployed on Vercel |
-| Backend | Python, Claude Haiku (translate), Claude Sonnet (assess + improve) |
-| Database | Supabase (Postgres) |
-| Jobs | GitHub Actions — aggregation every 3h, digest + This Week summary daily |
 
 ---
 
@@ -82,49 +78,22 @@ flowchart LR
 
 ---
 
-## Running locally
+## Development
 
 **Prerequisites:** Python 3.12+, Node 18+, `uv` ([install](https://docs.astral.sh/uv/))
 
-```bash
-# Backend deps
-uv sync
-
-# Frontend deps
-cd frontend && npm install
-```
-
-Copy `.env.example` to `.env` and fill in:
-```
-SUPABASE_URL=
-SUPABASE_SERVICE_KEY=
-ANTHROPIC_API_KEY=
-YOUTUBE_API_KEY=
-```
-
-Copy `frontend/.env.example` to `frontend/.env` and fill in:
-```
-VITE_SUPABASE_URL=
-VITE_SUPABASE_ANON_KEY=
-```
+Copy `.env.example` → `.env` and `frontend/.env.example` → `frontend/.env` and fill in the Supabase, Anthropic, and YouTube API keys.
 
 ```bash
-# Run the aggregation job once
-uv run job.py
+uv sync                      # backend deps
+cd frontend && npm install   # frontend deps
 
-# Run the daily digest
-uv run digest.py
+uv run job.py                # run aggregation once
+uv run digest.py             # run daily digest
+uv run weekly_summary.py     # run This Week summary
+cd frontend && npm run dev   # frontend dev server
 
-# Start the frontend dev server
-cd frontend && npm run dev
+uv run pytest -v             # run tests
 ```
 
----
-
-## Tests
-
-```bash
-uv run pytest -v
-```
-
-Tests cover URL→category mapping, scraper output schema, Claude JSON parsing, and architectural invariants. The aggregation job is gated on tests passing — broken code never reaches production.
+Tests cover URL→category mapping, scraper output schema, Claude JSON parsing, and architectural invariants. CI also runs `npm run build` to catch frontend errors before they reach Vercel.

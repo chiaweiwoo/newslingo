@@ -47,14 +47,24 @@ export default function WordSheet({ word, definition, loading, onSpeak, onDismis
             <Text fontSize="xs" color="brand.muted">Looking up "{word}"…</Text>
           </HStack>
         ) : !definition ? (
-          <VStack spacing={1} py={3} align="flex-start">
-            <Text fontSize="sm" fontWeight="700" color="brand.ink">{word}</Text>
-            <Text fontSize="xs" color="brand.muted">No definition found.</Text>
-          </VStack>
+          <HStack justify="space-between" py={3} align="center">
+            <VStack spacing={0} align="flex-start">
+              <Text fontSize="sm" fontWeight="700" color="brand.ink">{word}</Text>
+              <Text fontSize="xs" color="brand.muted">No definition found.</Text>
+            </VStack>
+            <Box as="button" onClick={onDismiss} color="brand.muted"
+              _hover={{ color: 'brand.ink' }} transition="color 0.15s" aria-label="Close">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"
+                stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <line x1="1" y1="1" x2="13" y2="13" />
+                <line x1="13" y1="1" x2="1" y2="13" />
+              </svg>
+            </Box>
+          </HStack>
         ) : (
           <VStack spacing={3} align="stretch">
 
-            {/* Word + phonetic + speak */}
+            {/* Word + phonetic + speak + close */}
             <HStack justify="space-between" align="flex-start">
               <VStack spacing={0} align="flex-start">
                 <Text
@@ -69,17 +79,26 @@ export default function WordSheet({ word, definition, loading, onSpeak, onDismis
                   </Text>
                 )}
               </VStack>
-              <Box
-                as="button"
-                onClick={() => onSpeak(`word-${definition.word}`, definition.word)}
-                color="brand.muted"
-                _hover={{ color: 'brand.ink' }}
-                transition="color 0.15s"
-                mt="2px"
-                aria-label="Pronounce"
-              >
-                <IconSpeaker />
-              </Box>
+              <HStack spacing={3}>
+                <Box
+                  as="button"
+                  onClick={() => onSpeak(`word-${definition.word}`, definition.word)}
+                  color="brand.muted"
+                  _hover={{ color: 'brand.ink' }}
+                  transition="color 0.15s"
+                  aria-label="Pronounce"
+                >
+                  <IconSpeaker />
+                </Box>
+                <Box as="button" onClick={onDismiss} color="brand.muted"
+                  _hover={{ color: 'brand.ink' }} transition="color 0.15s" aria-label="Close">
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none"
+                    stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <line x1="1" y1="1" x2="13" y2="13" />
+                    <line x1="13" y1="1" x2="1" y2="13" />
+                  </svg>
+                </Box>
+              </HStack>
             </HStack>
 
             <Divider borderColor="brand.rule" />

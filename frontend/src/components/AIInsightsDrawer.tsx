@@ -66,8 +66,8 @@ export default function AIInsightsDrawer({ isOpen, onClose }: Props) {
                 How AI is Improving
               </Text>
               <Text fontSize="xs" color="gray.400" fontWeight="normal" mt={0.5}>
-                Every 10 runs, the AI reviews its own translation mistakes and writes
-                new rules to do better next time.
+                After each batch of runs, the AI reviews its own translation mistakes
+                and writes rules to do better next time.
               </Text>
             </Box>
           </HStack>
@@ -84,7 +84,7 @@ export default function AIInsightsDrawer({ isOpen, onClose }: Props) {
                 <Text fontSize="2xl">🌱</Text>
                 <Text fontSize="sm" color="gray.500" fontWeight="medium">Still learning…</Text>
                 <Text fontSize="xs" color="gray.400" textAlign="center" maxW="220px">
-                  No rules yet. Check back after the AI has completed 10 runs.
+                  Rules will appear after the next job run completes.
                 </Text>
               </VStack>
             </Center>

@@ -18,3 +18,6 @@ Thumbs.db
 
 # Claude Code local config
 .claude/
+
+# Temporary query/debug scripts — never commit
+_tmp_*.py

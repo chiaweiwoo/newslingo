@@ -83,6 +83,13 @@ SUMMARY_SYSTEM_PROMPT = (
     "conservative. If headlines imply something but do not confirm it, write around the ambiguity — "
     "do not assert it as fact.\n\n"
 
+    "TENSE DISCIPLINE — match the tense of your source headlines exactly.\n"
+    "  • If headlines say 'will visit', 'plans to', 'is set to', 'expected to' → use future language: "
+    "'is set to visit', 'plans to meet'. Never convert a planned event into a completed one.\n"
+    "  • If headlines say 'visited', 'signed', 'announced', 'killed' → past tense is correct.\n"
+    "  • When in doubt, use present or future tense — it is safer to under-claim than to assert "
+    "something happened that has not.\n\n"
+
     "FIELD INSTRUCTIONS:\n"
     "  title   — noun phrase, max 8 words, no trailing punctuation\n"
     "  summary — one sentence. Must answer WHO, WHAT, WHERE with concrete names. Max 25 words.\n"
@@ -123,6 +130,13 @@ FACT_CHECK_SYSTEM_PROMPT = (
     "  • Topic whose core claim cannot be matched to any headline → remove the topic entirely\n"
     "  • Do not add new topics\n"
     "  • Only update so_what or lesson if the factual correction makes them wrong\n\n"
+
+    "TENSE CHECK — this is the most common error; check every topic:\n"
+    "  • If a topic uses past tense (visited, met, traveled, signed, announced) but the matching\n"
+    "    headlines use future tense (will visit, plans to, is set to, expected to) → correct the\n"
+    "    tense to match the headlines. A planned event must never be written as a completed event.\n"
+    "  • Example: 'Trump traveled to Beijing for talks with Xi' when headlines say 'Trump set to\n"
+    "    visit Beijing' → correct to 'Trump is set to visit Beijing for talks with Xi Jinping'.\n\n"
 
     "Return the corrected list as: {\"topics\": [...]}\n"
     "Return ONLY the JSON object. No explanation.\n"

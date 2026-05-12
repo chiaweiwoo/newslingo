@@ -17,6 +17,7 @@ from datetime import datetime, timedelta, timezone
 import anthropic
 from dotenv import load_dotenv
 
+from pricing import compute_cost_usd
 from supabase import create_client
 
 sys.stdout.reconfigure(encoding="utf-8")
@@ -88,8 +89,10 @@ def _extract_json_object(text: str) -> str | None:
     return text[first:last + 1]
 
 
-def _call_summary(content: str) -> dict:
-    """Call Claude Sonnet expecting a JSON object response."""
+def _call_summary(content: str) -> tuple[dict, object]:
+    """Call Claude Sonnet expecting a JSON object response.
+    Returns (parsed_dict, usage) so the caller can record token costs.
+    """
     msg = claude.messages.create(
         model=SUMMARY_MODEL,
         max_tokens=4000,
@@ -102,7 +105,7 @@ def _call_summary(content: str) -> dict:
         try:
             parsed = json.loads(extracted)
             if isinstance(parsed, dict) and "topics" in parsed:
-                return parsed
+                return parsed, msg.usage
         except json.JSONDecodeError:
             pass
     raise ValueError(
@@ -205,7 +208,7 @@ def _main() -> None:
             return
 
         content = _build_content(headlines)
-        payload = _call_summary(content)
+        payload, usage = _call_summary(content)
         topic_count = len(payload.get("topics", []))
         print(f"[summary] generated {topic_count} topic clusters", flush=True)
 
@@ -219,6 +222,19 @@ def _main() -> None:
             "payload":    payload,
             "active":     True,
         }).execute()
+
+        # Record token usage
+        in_tok  = getattr(usage, "input_tokens", 0)
+        out_tok = getattr(usage, "output_tokens", 0)
+        cost    = compute_cost_usd(SUMMARY_MODEL, in_tok, out_tok)
+        supabase.table("token_usage").insert({
+            "task":          "insights",
+            "model":         SUMMARY_MODEL,
+            "input_tokens":  in_tok,
+            "output_tokens": out_tok,
+            "cost_usd":      cost,
+        }).execute()
+        print(f"[summary] in={in_tok} out={out_tok} cost=${cost:.4f}", flush=True)
 
         print("[summary] summary updated successfully", flush=True)
 

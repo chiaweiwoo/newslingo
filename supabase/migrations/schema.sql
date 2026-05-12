@@ -143,3 +143,21 @@ CREATE POLICY "visits_anon_insert"
 
 CREATE POLICY "visits_anon_select"
   ON public.visits FOR SELECT TO anon USING (true);
+
+-- ── token_usage ───────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS public.token_usage (
+    id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    recorded_at   TIMESTAMPTZ DEFAULT now(),
+    task          TEXT        NOT NULL,    -- 'translation' | 'feedback' | 'insights'
+    model         TEXT        NOT NULL,
+    input_tokens  BIGINT      NOT NULL DEFAULT 0,
+    output_tokens BIGINT      NOT NULL DEFAULT 0,
+    cost_usd      NUMERIC(10,6) NOT NULL DEFAULT 0
+);
+
+ALTER TABLE public.token_usage ENABLE ROW LEVEL SECURITY;
+
+-- token_usage — public read (Costs drawer)
+CREATE POLICY "token_usage_anon_select"
+  ON public.token_usage FOR SELECT TO anon USING (true);

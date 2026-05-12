@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 import anthropic
 from dotenv import load_dotenv
 
+from pricing import compute_cost_usd
 from supabase import create_client
 
 sys.stdout.reconfigure(encoding="utf-8")
@@ -76,8 +77,10 @@ def _extract_json_object(text: str) -> str | None:
     return text[first:last + 1]
 
 
-def _call_digest(content: str) -> dict:
-    """Call Claude Sonnet expecting a JSON object response."""
+def _call_digest(content: str) -> tuple[dict, object]:
+    """Call Claude Sonnet expecting a JSON object response.
+    Returns (parsed_dict, usage) so the caller can record token costs.
+    """
     msg = claude.messages.create(
         model=DIGEST_MODEL,
         max_tokens=4000,
@@ -90,7 +93,7 @@ def _call_digest(content: str) -> dict:
         try:
             parsed = json.loads(extracted)
             if isinstance(parsed, dict):
-                return parsed
+                return parsed, msg.usage
         except json.JSONDecodeError:
             pass
     raise ValueError(
@@ -202,7 +205,7 @@ def _main() -> None:
             return
 
         content = _build_content(previous, failures, rules)
-        payload = _call_digest(content)
+        payload, usage = _call_digest(content)
         print(f"[digest] generated payload for regions: {list(payload.keys())}", flush=True)
 
         # Rotate: deactivate old, insert new
@@ -215,6 +218,19 @@ def _main() -> None:
             "payload":   payload,
             "active":    True,
         }).execute()
+
+        # Record token usage
+        in_tok  = getattr(usage, "input_tokens", 0)
+        out_tok = getattr(usage, "output_tokens", 0)
+        cost    = compute_cost_usd(DIGEST_MODEL, in_tok, out_tok)
+        supabase.table("token_usage").insert({
+            "task":          "insights",
+            "model":         DIGEST_MODEL,
+            "input_tokens":  in_tok,
+            "output_tokens": out_tok,
+            "cost_usd":      cost,
+        }).execute()
+        print(f"[digest] in={in_tok} out={out_tok} cost=${cost:.4f}", flush=True)
 
         print("[digest] digest updated successfully", flush=True)
 

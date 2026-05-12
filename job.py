@@ -12,6 +12,7 @@ from datetime import datetime
 import anthropic
 from dotenv import load_dotenv
 
+from pricing import compute_cost_usd
 from scrapers import astro as astro_scraper
 from scrapers import zaobao as zaobao_scraper
 from supabase import create_client
@@ -34,6 +35,42 @@ TRANSLATE_MODEL    = "claude-haiku-4-5-20251001"
 ASSESS_MODEL       = "claude-sonnet-4-6"
 DISTILL_MODEL      = "claude-sonnet-4-6"
 ASSESS_PASS_SCORE  = 3           # score >= 3 passes, < 3 triggers retry
+
+# ── Token usage accumulator ───────────────────────────────────────────────────
+# Accumulated per task category across all _call_claude calls in a single run.
+# Reset at the start of _main(); flushed to DB at the end.
+
+_token_totals: dict[str, dict] = {}
+
+
+def _add_tokens(task: str, model: str, usage: object) -> None:
+    """Accumulate token counts for a task category."""
+    if task not in _token_totals:
+        _token_totals[task] = {"model": model, "input_tokens": 0, "output_tokens": 0}
+    _token_totals[task]["input_tokens"]  += getattr(usage, "input_tokens", 0)
+    _token_totals[task]["output_tokens"] += getattr(usage, "output_tokens", 0)
+
+
+def _record_token_usage() -> None:
+    """Write accumulated token totals to token_usage table, then reset."""
+    for task, totals in _token_totals.items():
+        try:
+            cost = compute_cost_usd(totals["model"], totals["input_tokens"], totals["output_tokens"])
+            supabase.table("token_usage").insert({
+                "task":          task,
+                "model":         totals["model"],
+                "input_tokens":  totals["input_tokens"],
+                "output_tokens": totals["output_tokens"],
+                "cost_usd":      cost,
+            }).execute()
+            print(
+                f"[tokens] {task}: in={totals['input_tokens']} out={totals['output_tokens']} "
+                f"cost=${cost:.4f}",
+                flush=True,
+            )
+        except Exception as e:
+            print(f"[tokens] WARNING: failed to record {task}: {e}", flush=True)
+    _token_totals.clear()
 
 # ── System prompts ────────────────────────────────────────────────────────────
 
@@ -282,7 +319,7 @@ def _extract_json_array(text: str) -> str | None:
     return text[first:last + 1]
 
 
-def _call_claude(model: str, system: str, content: str, use_prefill: bool = True) -> list[dict]:
+def _call_claude(model: str, system: str, content: str, use_prefill: bool = True, task: str = "translation") -> list[dict]:
     """Call Claude expecting a JSON array.
 
     use_prefill=True  — adds {"role": "assistant", "content": "["} to force JSON output.
@@ -311,6 +348,7 @@ def _call_claude(model: str, system: str, content: str, use_prefill: bool = True
             system=system,
             messages=messages,
         )
+        _add_tokens(task, model, msg.usage)
         body = msg.content[0].text if msg.content else ""
 
         candidates: list[str] = []
@@ -422,7 +460,7 @@ def assess_translations(rows: list[dict], source: str) -> tuple[list[dict], list
             f"{j+1}. ZH: {r['title_zh']} | EN: {r['title_en']}"
             for j, r in enumerate(batch)
         )
-        results = _call_claude(ASSESS_MODEL, ASSESS_SYSTEM_PROMPT, f"Assess these translations:\n{numbered}", use_prefill=False)
+        results = _call_claude(ASSESS_MODEL, ASSESS_SYSTEM_PROMPT, f"Assess these translations:\n{numbered}", use_prefill=False, task="feedback")
         if len(results) != len(batch):
             print(
                 f"  [{source}] WARNING: assess returned {len(results)} for {len(batch)} input items "
@@ -532,6 +570,7 @@ def _distill_rules(source: str, run_count: int) -> None:
         DISTILL_SYSTEM_PROMPT,
         f"Extract translation rules from these failures:\n{numbered}",
         use_prefill=False,
+        task="feedback",
     )
     _replace_prompt_rules(source, rules, run_count)
 
@@ -552,6 +591,7 @@ def upsert_rows(rows: list[dict]) -> None:
 
 def _main() -> None:
     print("[job] NewsLingo job starting — build: hardening (post-bf21d57)", flush=True)
+    _token_totals.clear()  # reset accumulator for this run
     start_time = time.time()
     items_found = 0
     items_processed = 0
@@ -649,6 +689,9 @@ def _main() -> None:
                     _distill_rules(src, run_count)
                 except Exception as e:
                     print(f"[distill] {src} failed: {e}", flush=True)
+
+        # ── Record token usage (after all Claude calls including distillation) ─
+        _record_token_usage()
 
 
 if __name__ == "__main__":

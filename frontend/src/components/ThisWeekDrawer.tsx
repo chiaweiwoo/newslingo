@@ -17,10 +17,12 @@ const THEMES = ['Politics', 'Economy', 'Society', 'Security', 'Technology', 'Env
 type Theme = typeof THEMES[number];
 
 interface Topic {
-  title:   string;
-  summary: string;
-  region:  'International' | 'Malaysia' | 'Singapore';
-  theme?:  Theme;   // optional — older rows may not have it
+  title:    string;
+  summary:  string;
+  region:   'International' | 'Malaysia' | 'Singapore';
+  theme?:   Theme;
+  so_what?: string;
+  lesson?:  string[];
 }
 
 interface SummaryPayload {
@@ -52,6 +54,99 @@ function loadStoredThemes(): Theme[] {
   return [...THEMES];
 }
 
+// ── Topic card with accordion expand ─────────────────────────────────────────
+
+function TopicCard({ topic }: { topic: Topic }) {
+  const [expanded, setExpanded] = useState(false);
+  const hasDetail = !!(topic.so_what || (topic.lesson && topic.lesson.length > 0));
+
+  return (
+    <Box py={2.5}>
+      {/* Header row — always visible */}
+      <Flex
+        justify="space-between"
+        align="flex-start"
+        cursor={hasDetail ? 'pointer' : 'default'}
+        onClick={() => hasDetail && setExpanded(v => !v)}
+        role={hasDetail ? 'button' : undefined}
+        aria-expanded={hasDetail ? expanded : undefined}
+      >
+        <Box flex="1" pr={hasDetail ? 2 : 0}>
+          {topic.theme && (
+            <Text
+              fontSize="2xs" fontWeight="700" color="brand.muted"
+              textTransform="uppercase" letterSpacing="wider" mb={1}
+            >
+              {topic.theme}
+            </Text>
+          )}
+          <Text
+            fontSize="sm" fontWeight="700" color="brand.ink"
+            lineHeight="1.4" mb={1}
+            fontFamily="'Noto Serif SC', 'Georgia', serif"
+          >
+            {topic.title}
+          </Text>
+          <Text fontSize="xs" color="brand.muted" lineHeight="1.6">
+            {topic.summary}
+          </Text>
+        </Box>
+
+        {hasDetail && (
+          <Text
+            fontSize="xs" color="brand.muted" mt="3px" flexShrink={0}
+            style={{
+              display: 'inline-block',
+              transition: 'transform 0.2s',
+              transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)',
+            }}
+          >
+            ▾
+          </Text>
+        )}
+      </Flex>
+
+      {/* Expanded detail */}
+      {expanded && hasDetail && (
+        <Box mt={3}>
+          {topic.so_what && (
+            <Box mb={3} pl={0}>
+              <Text
+                fontSize="2xs" fontWeight="700" color="brand.red"
+                textTransform="uppercase" letterSpacing="wider" mb={1.5}
+              >
+                So what
+              </Text>
+              <Text fontSize="xs" color="brand.ink" lineHeight="1.8">
+                {topic.so_what}
+              </Text>
+            </Box>
+          )}
+
+          {topic.lesson && topic.lesson.length > 0 && (
+            <Box>
+              <Text
+                fontSize="2xs" fontWeight="700" color="brand.red"
+                textTransform="uppercase" letterSpacing="wider" mb={1.5}
+              >
+                Why it matters
+              </Text>
+              <VStack spacing={2} align="stretch">
+                {topic.lesson.map((point, i) => (
+                  <Flex key={i} gap={2} align="flex-start">
+                    <Text fontSize="xs" color="brand.muted" flexShrink={0} mt="1px">•</Text>
+                    <Text fontSize="xs" color="brand.ink" lineHeight="1.8">{point}</Text>
+                  </Flex>
+                ))}
+              </VStack>
+            </Box>
+          )}
+        </Box>
+      )}
+    </Box>
+  );
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 interface Props {
@@ -69,7 +164,7 @@ export default function ThisWeekDrawer({ isOpen, onClose }: Props) {
   const toggle = (theme: Theme) => {
     setSelected(prev =>
       prev.includes(theme)
-        ? prev.length > 1 ? prev.filter(t => t !== theme) : prev  // keep at least one
+        ? prev.length > 1 ? prev.filter(t => t !== theme) : prev
         : [...prev, theme]
     );
   };
@@ -90,7 +185,6 @@ export default function ThisWeekDrawer({ isOpen, onClose }: Props) {
     staleTime: 0,
   });
 
-  // Filter by selected themes — topics without a theme pass through (legacy data)
   const allTopics = summary?.payload?.topics ?? [];
   const filtered  = allTopics.filter(t => !t.theme || selected.includes(t.theme));
 
@@ -189,26 +283,7 @@ export default function ThisWeekDrawer({ isOpen, onClose }: Props) {
                           {topics.map((topic, i) => (
                             <Box key={i}>
                               {i > 0 && <Divider borderColor="brand.rule" />}
-                              <Box py={2.5}>
-                                {topic.theme && (
-                                  <Text
-                                    fontSize="2xs" fontWeight="700" color="brand.muted"
-                                    textTransform="uppercase" letterSpacing="wider" mb={1}
-                                  >
-                                    {topic.theme}
-                                  </Text>
-                                )}
-                                <Text
-                                  fontSize="sm" fontWeight="700" color="brand.ink"
-                                  lineHeight="1.4" mb={1}
-                                  fontFamily="'Noto Serif SC', 'Georgia', serif"
-                                >
-                                  {topic.title}
-                                </Text>
-                                <Text fontSize="xs" color="brand.muted" lineHeight="1.6">
-                                  {topic.summary}
-                                </Text>
-                              </Box>
+                              <TopicCard topic={topic} />
                             </Box>
                           ))}
                         </VStack>
@@ -220,7 +295,7 @@ export default function ThisWeekDrawer({ isOpen, onClose }: Props) {
 
               <Divider borderColor="brand.rule" />
               <Text fontSize="2xs" color="brand.muted" textAlign="center" pb={2} lineHeight="1.6">
-                Updated daily · past 7 days
+                Updated daily · past 7 days · tap any story to expand
               </Text>
 
             </VStack>

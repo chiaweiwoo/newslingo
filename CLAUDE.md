@@ -147,7 +147,10 @@ GitHub Actions (cron: daily 09:00 SGT)
   └── weekly_summary.py
        ├── skips if < MIN_NEW_HEADLINES (30) since last run — avoids pointless churn
        ├── pulls past 7 days of translated headlines (rolling window, not Mon-Sun)
-       ├── _call_summary()     → Claude Sonnet  → 5-8 topic clusters with summaries
+       ├── Pass 1: _call_summary()  → Claude Sonnet → 8-10 must-know topics with
+       │          title, summary (WHO/WHAT/WHERE), so_what, lesson[], region, theme
+       ├── Pass 2: _call_fact_check() → Claude Sonnet → removes/corrects any topic
+       │          whose specific factual claim cannot be matched to a headline
        └── rotates weekly_summary table (deactivates old, inserts new)
 ```
 
@@ -159,9 +162,10 @@ GitHub Actions (cron: daily 09:00 SGT)
 | `assessment_logs` | YES | Per-run quality scores |
 | `prompt_rules` | YES | Distilled LLM rules |
 | `learning_digest` | YES | Inside AI digest; rotated by digest.py |
-| `weekly_summary` | YES | This Week topic clusters; rotated by weekly_summary.py |
+| `weekly_summary` | YES | This Week topic clusters; rotated by weekly_summary.py. Each topic includes `so_what` and `lesson[]` fields. |
 | `job_runs` | NO | Audit log — preserve |
 | `visits` | NO | Frontend analytics — preserve; includes `ip`, `country`, `is_mobile` |
+| `token_usage` | NO | AI token cost per task per run; used by Costs drawer. Task values: `translation`, `feedback`, `insights`. |
 
 ---
 
@@ -173,7 +177,29 @@ GitHub Actions (cron: daily 09:00 SGT)
 | Assessment | `claude-sonnet-4-6` | Structured output; runs every 3h |
 | Distillation | `claude-sonnet-4-6` | Rule extraction from failures |
 | Inside AI digest | `claude-sonnet-4-6` | Daily; structured summarisation, Sonnet is sufficient |
-| This Week summary | `claude-sonnet-4-6` | Daily (rolling 7-day window); Sonnet is sufficient |
+| This Week summary | `claude-sonnet-4-6` | Daily; two-pass (generate + fact-check); Sonnet sufficient |
+
+### This Week topic schema
+
+Each topic in `weekly_summary.payload.topics` has these fields:
+
+| Field | Type | Notes |
+|---|---|---|
+| `title` | string | Noun phrase, max 8 words |
+| `summary` | string | WHO/WHAT/WHERE, one sentence |
+| `so_what` | string | 2-3 sentences: general impact → specific groups |
+| `lesson` | string[] | 2-4 narrative bullets, no label prefixes |
+| `region` | string | `International` \| `Malaysia` \| `Singapore` |
+| `theme` | string | One of the 6 THEMES |
+
+`so_what` and `lesson` are optional in the TypeScript interface (older rows lack them).
+The frontend `TopicCard` shows a chevron and expands to reveal them when present.
+
+The two-pass design: Pass 1 generates the full analysis; Pass 2 (fact-check) removes or
+softens any topic whose specific factual claim (visit, death, figure) cannot be matched
+to a provided headline. This prevents model hallucination of concrete events.
+
+---
 
 **ASSESS_BATCH_SIZE = 20** — Sonnet drops/duplicates items at higher counts. Do not raise.  
 **CLAUDE_BATCH_SIZE = 50** — Translation batch size.

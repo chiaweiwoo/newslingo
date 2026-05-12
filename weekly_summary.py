@@ -1,17 +1,24 @@
 """
 NewsLingo This Week summary job — runs daily at 09:00 SGT.
 
-Always pulls the past 7 days of headlines so the summary is never more than
-1 day old and always has a full week of context. The window rolls forward
-every day — no artificial Monday boundary.
+Two-pass generation:
+  Pass 1 — Generate 8-10 must-know topic clusters with full analysis
+            (title, summary, so_what, lesson, region, theme).
+  Pass 2 — Self-critique: fact-check every specific claim against the
+            original headlines; remove or correct anything not directly
+            supported.
 
-Non-fatal: any failure is logged and the job exits 0 so the workflow never
-blocks production or raises a GitHub Actions alarm.
+The window rolls forward every day (rolling 7-day, no Monday boundary).
+Smart-skip: regeneration is skipped if fewer than MIN_NEW_HEADLINES have
+arrived since the last run to avoid pointless churn.
+
+Non-fatal: any failure is logged and the job exits 0.
 """
 
 import json
 import os
 import sys
+import types
 from datetime import datetime, timedelta, timezone
 
 import anthropic
@@ -31,14 +38,18 @@ ANTHROPIC_API_KEY    = os.getenv("ANTHROPIC_API_KEY")
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 claude   = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=120.0)
 
-SUMMARY_MODEL    = "claude-sonnet-4-6"
-LOOKBACK_DAYS    = 7
+SUMMARY_MODEL     = "claude-sonnet-4-6"
+LOOKBACK_DAYS     = 7
 MIN_NEW_HEADLINES = 30   # skip regeneration if fewer new headlines since last run
 
 THEMES = ["Politics", "Economy", "Society", "Security", "Technology", "Environment"]
 
+# ── Prompts ───────────────────────────────────────────────────────────────────
+
 SUMMARY_SYSTEM_PROMPT = (
-    "You are a bilingual news editor for NewsLingo, covering Singapore, Malaysia, and world news.\n\n"
+    "You are a senior news editor curating a weekly briefing for busy professionals.\n"
+    "Your reader has limited time and wants to know what actually matters — not everything, "
+    "just the things they would feel a gap without knowing.\n\n"
 
     "You will receive translated headlines from the past 7 days, tagged by region "
     "(International / Malaysia / Singapore).\n\n"
@@ -47,34 +58,74 @@ SUMMARY_SYSTEM_PROMPT = (
     "{\n"
     '  "topics": [\n'
     "    {\n"
-    '      "title": "Short topic label (max 8 words)",\n'
-    '      "summary": "One tight sentence (max 20 words) capturing what happened.",\n'
-    '      "region": "International" | "Malaysia" | "Singapore",\n'
-    '      "theme": "Politics" | "Economy" | "Society" | "Security" | "Technology" | "Environment"\n'
+    '      "title":   "Short topic label (max 8 words)",\n'
+    '      "summary": "WHO did WHAT WHERE — one sentence, concrete names and places.",\n'
+    '      "so_what": "Why this matters — 2-3 sentences. Start with the general impact, '
+    'then narrow to specific groups affected.",\n'
+    '      "lesson":  ["narrative bullet", "narrative bullet"],\n'
+    '      "region":  "International" | "Malaysia" | "Singapore",\n'
+    '      "theme":   "Politics" | "Economy" | "Society" | "Security" | "Technology" | "Environment"\n'
     "    }\n"
     "  ]\n"
     "}\n\n"
 
-    "A story is important if it meets all three criteria:\n"
-    "1. Impact — real consequences for a significant number of people\n"
-    "2. Coverage — appeared across multiple headlines, not a single mention\n"
-    "3. Recency — developing or recently concluded, not old background context\n\n"
+    "SELECTION — include a story only if it passes the must-know test:\n"
+    "  • Does this change what people pay, their safety, their legal rights, or their future options?\n"
+    "  • Does it represent a structural shift — political, economic, geopolitical — with compounding "
+    "consequences over months or years?\n"
+    "  • Does it carry a public health signal worth awareness, even if the outcome is still uncertain "
+    "(think: early COVID-like pattern)?\n"
+    "Exclude: single accidents or crimes without a systemic pattern behind them; ceremonial events "
+    "with no signed outcome; local decisions with limited reach.\n\n"
 
-    "Theme definitions (assign exactly one per topic):\n"
-    "- Politics: elections, government, parliament, policy, diplomacy\n"
-    "- Economy: markets, trade, business, corporate news, cost of living\n"
-    "- Society: crime, courts, culture, education, public health, religion\n"
-    "- Security: armed conflicts, military, terrorism, weapons, sanctions\n"
-    "- Technology: AI, software, infrastructure, cybersecurity, science\n"
-    "- Environment: climate, natural disasters, energy, conservation\n\n"
+    "FACTUAL DISCIPLINE — only state that an event occurred if a provided headline directly says it "
+    "did. For high-stakes claims (meetings, visits, deaths, signed deals, financial figures): be "
+    "conservative. If headlines imply something but do not confirm it, write around the ambiguity — "
+    "do not assert it as fact.\n\n"
+
+    "FIELD INSTRUCTIONS:\n"
+    "  title   — noun phrase, max 8 words, no trailing punctuation\n"
+    "  summary — one sentence. Must answer WHO, WHAT, WHERE with concrete names. Max 25 words.\n"
+    "  so_what — 2-3 sentences. Lead with the broad impact, then narrow to who feels it most.\n"
+    "  lesson  — 2-4 narrative bullets. No label prefixes like 'Short term:' or 'Long term:'.\n"
+    "            Write natural sentences. Include a 'worth watching' point only when the outcome\n"
+    "            is genuinely uncertain and observation is warranted.\n"
+    "  region  — International | Malaysia | Singapore\n"
+    "  theme   — Politics | Economy | Society | Security | Technology | Environment\n\n"
+
+    "Theme definitions:\n"
+    "  Politics:    elections, government, parliament, policy, diplomacy\n"
+    "  Economy:     markets, trade, business, corporate news, cost of living\n"
+    "  Society:     crime, courts, culture, education, public health, religion\n"
+    "  Security:    armed conflicts, military, terrorism, weapons, sanctions\n"
+    "  Technology:  AI, software, infrastructure, cybersecurity, science\n"
+    "  Environment: climate, natural disasters, energy, conservation\n\n"
+
+    "QUANTITY — aim for 8-10 strong stories. Missing something is acceptable; a weak story is not. "
+    "Spread across regions and themes where stories genuinely qualify — do not force coverage.\n\n"
+
+    "Return ONLY the JSON object. No preamble, no explanation, no markdown fences.\n"
+)
+
+FACT_CHECK_SYSTEM_PROMPT = (
+    "You are a fact-checker for a news summary. You will receive:\n"
+    "  1. HEADLINES — the source headlines used to generate the summary\n"
+    "  2. TOPICS — the generated summary topics\n\n"
+
+    "For each topic, verify every specific factual claim against the provided headlines.\n"
+    "A specific factual claim includes: named meetings or visits, deaths or injuries with counts, "
+    "arrests, signed agreements, financial figures, military actions.\n\n"
 
     "Rules:\n"
-    "- Pick 10-15 topics — more topics give readers better filter coverage\n"
-    "- Spread across regions and themes; don't cluster under one region or theme\n"
-    "- Title: noun phrase, max 8 words, no punctuation at the end\n"
-    "- Summary: ONE sentence only, max 20 words, plain English, no jargon, no markdown\n"
-    "- Assign exactly one theme per topic\n"
-    "- Return ONLY the JSON object. No preamble, no explanation, no markdown fences.\n"
+    "  • Claim directly matched by a headline → keep unchanged\n"
+    "  • Claim not matched but general theme is supported → soften to what headlines actually support\n"
+    "    Example: 'Trump arrived in Beijing for talks' → 'Trump-Xi tensions escalated over trade'\n"
+    "  • Topic whose core claim cannot be matched to any headline → remove the topic entirely\n"
+    "  • Do not add new topics\n"
+    "  • Only update so_what or lesson if the factual correction makes them wrong\n\n"
+
+    "Return the corrected list as: {\"topics\": [...]}\n"
+    "Return ONLY the JSON object. No explanation.\n"
 )
 
 
@@ -89,29 +140,64 @@ def _extract_json_object(text: str) -> str | None:
     return text[first:last + 1]
 
 
-def _call_summary(content: str) -> tuple[dict, object]:
-    """Call Claude Sonnet expecting a JSON object response.
-    Returns (parsed_dict, usage) so the caller can record token costs.
-    """
-    msg = claude.messages.create(
-        model=SUMMARY_MODEL,
-        max_tokens=4000,
-        system=SUMMARY_SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": content}],
-    )
-    body = msg.content[0].text if msg.content else ""
+def _parse_topics(body: str, label: str) -> dict:
+    """Parse a JSON object with a 'topics' key from Claude response body."""
     extracted = _extract_json_object(body)
     if extracted:
         try:
             parsed = json.loads(extracted)
             if isinstance(parsed, dict) and "topics" in parsed:
-                return parsed, msg.usage
+                return parsed
         except json.JSONDecodeError:
             pass
     raise ValueError(
-        f"[summary] failed to parse JSON object from Claude response. "
+        f"[summary] {label}: failed to parse JSON from Claude response. "
         f"Body (first 400): {body[:400]!r}"
     )
+
+
+def _call_summary(content: str) -> tuple[dict, object]:
+    """Two-pass generation: produce topics then fact-check them.
+
+    Returns (corrected_payload, combined_usage) where combined_usage has
+    input_tokens and output_tokens summed across both API calls.
+    """
+    # ── Pass 1: generate ──────────────────────────────────────────────────────
+    msg1 = claude.messages.create(
+        model=SUMMARY_MODEL,
+        max_tokens=6000,
+        system=SUMMARY_SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": content}],
+    )
+    payload = _parse_topics(msg1.content[0].text if msg1.content else "", "pass-1")
+    topic_count_before = len(payload.get("topics", []))
+    print(f"[summary] pass-1: {topic_count_before} topics generated", flush=True)
+
+    # ── Pass 2: fact-check ────────────────────────────────────────────────────
+    fact_check_input = (
+        f"HEADLINES:\n{content}\n\n"
+        f"TOPICS:\n{json.dumps(payload, ensure_ascii=False, indent=2)}"
+    )
+    msg2 = claude.messages.create(
+        model=SUMMARY_MODEL,
+        max_tokens=6000,
+        system=FACT_CHECK_SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": fact_check_input}],
+    )
+    corrected = _parse_topics(msg2.content[0].text if msg2.content else "", "pass-2")
+    topic_count_after = len(corrected.get("topics", []))
+    removed = topic_count_before - topic_count_after
+    if removed:
+        print(f"[summary] pass-2: {removed} topic(s) removed or corrected by fact-check", flush=True)
+    else:
+        print(f"[summary] pass-2: all topics verified", flush=True)
+
+    # Combine usage from both calls
+    combined = types.SimpleNamespace(
+        input_tokens  = msg1.usage.input_tokens  + msg2.usage.input_tokens,
+        output_tokens = msg1.usage.output_tokens + msg2.usage.output_tokens,
+    )
+    return corrected, combined
 
 
 # ── DB helpers ────────────────────────────────────────────────────────────────
@@ -185,7 +271,7 @@ def _main() -> None:
     print("[summary] NewsLingo This Week summary job starting", flush=True)
 
     try:
-        now      = datetime.now(timezone.utc)
+        now       = datetime.now(timezone.utc)
         since_iso = (now - timedelta(days=LOOKBACK_DAYS)).isoformat()
 
         # Skip if not enough new headlines since the last summary was generated
@@ -210,7 +296,7 @@ def _main() -> None:
         content = _build_content(headlines)
         payload, usage = _call_summary(content)
         topic_count = len(payload.get("topics", []))
-        print(f"[summary] generated {topic_count} topic clusters", flush=True)
+        print(f"[summary] final: {topic_count} topic clusters", flush=True)
 
         # Rotate: deactivate old, insert new
         if previous:
@@ -223,7 +309,7 @@ def _main() -> None:
             "active":     True,
         }).execute()
 
-        # Record token usage
+        # Record token usage (combined across both passes)
         in_tok  = getattr(usage, "input_tokens", 0)
         out_tok = getattr(usage, "output_tokens", 0)
         cost    = compute_cost_usd(SUMMARY_MODEL, in_tok, out_tok)

@@ -1,7 +1,7 @@
 # NewsLingo
 
 > 中英双语时事 · Chinese & English bilingual news  
-> **Live: [chiawei.me](https://chiawei.me/)**
+> **Live: [newslingo.chiawei.me](https://newslingo.chiawei.me/)**
 
 Read Chinese news with English translations side by side — follow current events you already understand while picking up natural English phrasing.
 

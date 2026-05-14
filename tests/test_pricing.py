@@ -8,7 +8,6 @@ Covers:
   - schema.sql must declare the price snapshot columns
 """
 
-import importlib
 import os
 import re
 import sys

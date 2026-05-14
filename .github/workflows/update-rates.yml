@@ -30,9 +30,9 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
+          set +e
           uv run python .github/scripts/update_rates.py
           echo "exit_code=$?" >> "$GITHUB_OUTPUT"
-        continue-on-error: true
 
       - name: Commit updated pricing
         if: steps.update.outputs.exit_code == '42'

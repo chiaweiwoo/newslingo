@@ -34,20 +34,11 @@ jobs:
           echo "exit_code=$?" >> "$GITHUB_OUTPUT"
         continue-on-error: true
 
-      - name: Commit price change
+      - name: Commit updated pricing
         if: steps.update.outputs.exit_code == '42'
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add rates.json
           git commit -m "chore: update Anthropic pricing $(date -u +%Y-%m-%d)"
-          git push
-
-      - name: Commit last_checked timestamp
-        if: steps.update.outputs.exit_code == '43'
-        run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add rates.json
-          git commit -m "chore: pricing check $(date -u +%Y-%m-%d) — no changes"
           git push

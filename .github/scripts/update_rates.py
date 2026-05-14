@@ -114,6 +114,13 @@ def extract_prices_via_claude(page_text: str) -> dict[str, dict[str, float]]:
     if not result:
         raise ValueError("Claude returned no usable pricing data")
 
+    # Sanity check — reject obviously wrong values
+    for model_id, prices in result.items():
+        for key in ("input", "output"):
+            v = prices[key]
+            if not (0.01 <= v <= 200.0):
+                raise ValueError(f"price out of range for {model_id} {key}: {v} (expected $0.01–$200 per 1M tokens)")
+
     return result
 
 
@@ -160,7 +167,7 @@ def main() -> None:
 
         changed = prices_changed(current, fetched)
 
-        # Always update last_checked
+        # Always record last_checked
         rates["last_checked"] = today
 
         if changed:
@@ -170,9 +177,10 @@ def main() -> None:
             print("[update-rates] prices updated — committing", flush=True)
             sys.exit(42)  # signal workflow to commit
         else:
-            write_rates(rates)  # write updated last_checked
-            print("[update-rates] no price changes — updating last_checked only", flush=True)
-            sys.exit(43)  # signal workflow to commit last_checked update
+            # Update last_checked on disk but don't commit — use workflow run history instead
+            write_rates(rates)
+            print(f"[update-rates] no price changes — last_checked updated to {today}, no commit needed", flush=True)
+            sys.exit(0)
 
     except Exception as e:
         print(f"[update-rates] ERROR (non-fatal): {e}", flush=True)

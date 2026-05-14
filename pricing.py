@@ -11,11 +11,12 @@ import os
 
 _RATES_FILE = os.path.join(os.path.dirname(__file__), "rates.json")
 
-with open(_RATES_FILE, encoding="utf-8") as _f:
-    _rates = json.load(_f)
-
-# USD per 1M tokens — loaded from rates.json
-PRICING: dict[str, dict[str, float]] = _rates["models"]
+try:
+    with open(_RATES_FILE, encoding="utf-8") as _f:
+        _rates = json.load(_f)
+    PRICING: dict[str, dict[str, float]] = _rates["models"]
+except Exception:
+    PRICING = {}  # will fall through to _FALLBACK for every model
 
 _FALLBACK = {"input": 3.00, "output": 15.00}  # Sonnet-class default if model unknown
 

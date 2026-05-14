@@ -1,10 +1,15 @@
 """
 update_rates.py — fetch Anthropic pricing page, extract model prices via Claude,
-rewrite pricing.py if anything changed.
+update rates.json if prices changed.
 
-Strategy: use BeautifulSoup to strip the page down to plain text before sending
-to Claude — this drops the payload from ~200KB of HTML noise to a few KB of
-actual pricing content, making the Claude call cheap and accurate.
+rates.json tracks:
+  last_checked — updated every run (even when nothing changed)
+  last_updated — updated only when prices actually change
+  models       — the current prices per model
+
+Strategy: BeautifulSoup strips the pricing page down to plain text before
+sending to Claude, dropping the payload from ~1MB of HTML to ~20KB of
+readable content.
 
 Usage:
     python .github/scripts/update_rates.py
@@ -15,19 +20,17 @@ Env vars required:
 
 import json
 import os
-import re
 import sys
+import urllib.request
 from datetime import datetime, timezone
 
 import anthropic
-import urllib.request
 from bs4 import BeautifulSoup
 
-PRICING_FILE = "pricing.py"
-PRICING_URL  = "https://www.anthropic.com/pricing"
-MODEL        = "claude-haiku-4-5-20251001"
+RATES_FILE  = "rates.json"
+PRICING_URL = "https://www.anthropic.com/pricing"
+MODEL       = "claude-haiku-4-5-20251001"
 
-# Models we care about — must match keys in pricing.py exactly.
 TRACKED_MODELS = [
     "claude-haiku-4-5-20251001",
     "claude-sonnet-4-6",
@@ -62,16 +65,12 @@ def fetch_pricing_text() -> str:
         html = resp.read().decode("utf-8", errors="replace")
 
     soup = BeautifulSoup(html, "lxml")
-
-    # Drop scripts, styles, and nav boilerplate
     for tag in soup(["script", "style", "nav", "footer", "head"]):
         tag.decompose()
 
-    text = soup.get_text(separator="\n")
-
-    # Collapse blank lines
-    lines = [l.strip() for l in text.splitlines()]
-    text  = "\n".join(l for l in lines if l)
+    text  = soup.get_text(separator="\n")
+    lines = [line.strip() for line in text.splitlines()]
+    text  = "\n".join(line for line in lines if line)
 
     print(f"[update-rates] extracted {len(text):,} chars of plain text (from {len(html):,} bytes HTML)", flush=True)
     return text
@@ -90,21 +89,19 @@ def extract_prices_via_claude(page_text: str) -> dict[str, dict[str, float]]:
     body = msg.content[0].text.strip() if msg.content else ""
     print(f"[update-rates] Claude response: {body[:300]}", flush=True)
 
-    # Best-effort JSON extraction
     first = body.find("{")
     last  = body.rfind("}")
     if first == -1 or last == -1 or last <= first:
-        raise ValueError(f"[update-rates] no JSON object in Claude response: {body[:400]!r}")
+        raise ValueError(f"no JSON object in Claude response: {body[:400]!r}")
 
     parsed = json.loads(body[first : last + 1])
     if not isinstance(parsed, dict):
-        raise ValueError(f"[update-rates] expected dict, got {type(parsed)}")
+        raise ValueError(f"expected dict, got {type(parsed)}")
 
-    # Validate shape
     result: dict[str, dict[str, float]] = {}
     for model_id, prices in parsed.items():
         if model_id not in TRACKED_MODELS:
-            print(f"[update-rates] ignoring unknown model in response: {model_id!r}", flush=True)
+            print(f"[update-rates] ignoring unknown model: {model_id!r}", flush=True)
             continue
         if not isinstance(prices, dict) or "input" not in prices or "output" not in prices:
             print(f"[update-rates] skipping malformed entry for {model_id!r}", flush=True)
@@ -115,81 +112,37 @@ def extract_prices_via_claude(page_text: str) -> dict[str, dict[str, float]]:
         }
 
     if not result:
-        raise ValueError("[update-rates] Claude returned no usable pricing data")
+        raise ValueError("Claude returned no usable pricing data")
 
     return result
 
 
-def read_current_prices() -> dict[str, dict[str, float]]:
-    """Parse the PRICING dict out of pricing.py without importing it."""
-    with open(PRICING_FILE, encoding="utf-8") as f:
-        source = f.read()
-
-    # Extract each model line: "model-id": {"input": X, "output": Y}
-    pattern = r'"(claude-[^"]+)":\s*\{"input":\s*([\d.]+),\s*"output":\s*([\d.]+)\}'
-    current: dict[str, dict[str, float]] = {}
-    for m in re.finditer(pattern, source):
-        model_id, inp, out = m.group(1), float(m.group(2)), float(m.group(3))
-        if model_id in TRACKED_MODELS:
-            current[model_id] = {"input": inp, "output": out}
-    return current
+def load_rates() -> dict:
+    with open(RATES_FILE, encoding="utf-8") as f:
+        return json.load(f)
 
 
-def prices_changed(
-    current: dict[str, dict[str, float]],
-    fetched: dict[str, dict[str, float]],
-) -> bool:
-    for model_id in fetched:
+def prices_changed(current: dict[str, dict[str, float]], fetched: dict[str, dict[str, float]]) -> bool:
+    for model_id, prices in fetched.items():
         if model_id not in current:
             print(f"[update-rates] new model detected: {model_id}", flush=True)
             return True
         for key in ("input", "output"):
-            if abs(current[model_id][key] - fetched[model_id][key]) > 1e-9:
+            if abs(current[model_id][key] - prices[key]) > 1e-9:
                 print(
                     f"[update-rates] price change: {model_id} {key}: "
-                    f"{current[model_id][key]} → {fetched[model_id][key]}",
+                    f"{current[model_id][key]} → {prices[key]}",
                     flush=True,
                 )
                 return True
     return False
 
 
-def rewrite_pricing_file(
-    fetched: dict[str, dict[str, float]],
-    today: str,
-) -> None:
-    with open(PRICING_FILE, encoding="utf-8") as f:
-        source = f.read()
-
-    # Update the "last verified" comment
-    source = re.sub(
-        r"(Current prices last verified:)\s*[\d\-]+",
-        rf"\1 {today[:7]}",  # YYYY-MM
-        source,
-    )
-
-    # Update each tracked model line in the PRICING dict.
-    # Matches: "model-id":         {"input": X.XX,  "output": Y.YY},
-    for model_id, prices in fetched.items():
-        inp = prices["input"]
-        out = prices["output"]
-
-        def fmt(v: float) -> str:
-            # Preserve clean representation: 1.0 → "1.00", 3.5 → "3.50"
-            return f"{v:.2f}"
-
-        source = re.sub(
-            rf'("{re.escape(model_id)}")\s*:\s*\{{"input":\s*[\d.]+\s*,\s*"output":\s*[\d.]+\s*\}}',
-            lambda m, i=inp, o=out, mid=model_id: (
-                f'"{mid}": {{"input": {fmt(i)},  "output": {fmt(o)}}}'
-            ),
-            source,
-        )
-
-    with open(PRICING_FILE, "w", encoding="utf-8", newline="\n") as f:
-        f.write(source)
-
-    print(f"[update-rates] {PRICING_FILE} rewritten", flush=True)
+def write_rates(rates: dict) -> None:
+    with open(RATES_FILE, "w", encoding="utf-8", newline="\n") as f:
+        json.dump(rates, f, indent=2)
+        f.write("\n")
+    print(f"[update-rates] {RATES_FILE} written", flush=True)
 
 
 def main() -> None:
@@ -199,22 +152,29 @@ def main() -> None:
     try:
         page_text = fetch_pricing_text()
         fetched   = extract_prices_via_claude(page_text)
-        current = read_current_prices()
+        rates     = load_rates()
+        current   = rates.get("models", {})
 
         print(f"[update-rates] current:  {current}", flush=True)
         print(f"[update-rates] fetched:  {fetched}", flush=True)
 
-        if not prices_changed(current, fetched):
-            print("[update-rates] no price changes detected — nothing to do", flush=True)
-            sys.exit(0)
+        changed = prices_changed(current, fetched)
 
-        rewrite_pricing_file(fetched, today)
-        print("[update-rates] done — pricing.py updated", flush=True)
-        # Signal to the workflow that a commit is needed
-        sys.exit(42)
+        # Always update last_checked
+        rates["last_checked"] = today
+
+        if changed:
+            rates["last_updated"] = today
+            rates["models"]       = fetched
+            write_rates(rates)
+            print("[update-rates] prices updated — committing", flush=True)
+            sys.exit(42)  # signal workflow to commit
+        else:
+            write_rates(rates)  # write updated last_checked
+            print("[update-rates] no price changes — updating last_checked only", flush=True)
+            sys.exit(43)  # signal workflow to commit last_checked update
 
     except Exception as e:
-        # Non-fatal — don't break CI over a pricing fetch failure
         print(f"[update-rates] ERROR (non-fatal): {e}", flush=True)
         sys.exit(0)
 

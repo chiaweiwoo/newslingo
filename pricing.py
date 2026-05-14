@@ -1,16 +1,21 @@
 """
 Model pricing constants — USD per 1 million tokens.
 
-Update this file when Anthropic announces price changes.
-Current prices last verified: 2026-05.
+Prices are stored in rates.json and auto-updated daily by the update-rates
+GitHub Actions workflow. Do not edit the PRICING dict manually — edit rates.json
+or let the workflow update it.
 """
 
-# USD per 1M tokens
-PRICING: dict[str, dict[str, float]] = {
-    "claude-haiku-4-5-20251001": {"input": 1.00,  "output": 5.00},
-    "claude-sonnet-4-6":         {"input": 3.00,  "output": 15.00},
-    "claude-opus-4-7":           {"input": 5.00,  "output": 25.00},
-}
+import json
+import os
+
+_RATES_FILE = os.path.join(os.path.dirname(__file__), "rates.json")
+
+with open(_RATES_FILE, encoding="utf-8") as _f:
+    _rates = json.load(_f)
+
+# USD per 1M tokens — loaded from rates.json
+PRICING: dict[str, dict[str, float]] = _rates["models"]
 
 _FALLBACK = {"input": 3.00, "output": 15.00}  # Sonnet-class default if model unknown
 

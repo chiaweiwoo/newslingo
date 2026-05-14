@@ -12,7 +12,7 @@ jobs:
   update-rates:
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # needed to push the pricing.py commit
+      contents: write
 
     steps:
       - uses: actions/checkout@v6.0.2
@@ -32,14 +32,22 @@ jobs:
         run: |
           uv run python .github/scripts/update_rates.py
           echo "exit_code=$?" >> "$GITHUB_OUTPUT"
-        # exit 42 = prices changed; exit 0 = no change; anything else = error (treated as no-op)
         continue-on-error: true
 
-      - name: Commit updated pricing
-        if: steps.update.outcome == 'success' && steps.update.outputs.exit_code == '42'
+      - name: Commit price change
+        if: steps.update.outputs.exit_code == '42'
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add pricing.py
+          git add rates.json
           git commit -m "chore: update Anthropic pricing $(date -u +%Y-%m-%d)"
+          git push
+
+      - name: Commit last_checked timestamp
+        if: steps.update.outputs.exit_code == '43'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add rates.json
+          git commit -m "chore: pricing check $(date -u +%Y-%m-%d) — no changes"
           git push

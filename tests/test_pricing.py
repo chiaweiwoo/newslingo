@@ -90,9 +90,8 @@ class TestTokenUsagePriceSnapshotInvariant:
     """Every token_usage insert must include price_input_per_1m and price_output_per_1m."""
 
     INSERT_FILES = [
-        ("job.py",             "_record_token_usage"),
-        ("digest.py",          "Record token usage"),
-        ("weekly_summary.py",  "Record token usage"),
+        ("job.py",            "_record_token_usage"),
+        ("weekly_summary.py", "Record token usage"),
     ]
 
     def _extract_insert_block(self, src: str, anchor: str) -> str:

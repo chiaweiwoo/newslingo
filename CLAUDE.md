@@ -114,14 +114,6 @@ GitHub Actions (cron: every 3h)
        ├── upsert_rows()          → Supabase        → headlines table
        └── _record_token_usage()  → Supabase        → token_usage (tasks: translation, feedback)
 
-GitHub Actions (cron: daily 08:00 SGT)
-  └── digest.py
-       ├── loads previous learning_digest + digest_at watermark
-       ├── pulls delta assessment_logs failures + prompt_rules since watermark
-       ├── _call_digest()         → Claude Sonnet   → bullet-points JSON per region
-       ├── rotates learning_digest (deactivates old, inserts new)
-       └── writes token_usage row (task: insights)
-
 GitHub Actions (cron: daily 09:00 SGT)
   └── weekly_summary.py
        ├── skips if < MIN_NEW_HEADLINES (30) since last run
@@ -153,7 +145,7 @@ GitHub Actions (cron: daily 09:00 SGT)
 | `headlines` | YES | All article rows |
 | `assessment_logs` | YES | Per-run quality scores |
 | `prompt_rules` | YES | Distilled LLM rules |
-| `learning_digest` | YES | Inside AI digest; rotated by digest.py |
+| `learning_digest` | YES | Unused — was written by digest.py (now deleted). Safe to clear. |
 | `weekly_summary` | YES | Top Stories topics; rotated by weekly_summary.py |
 | `job_runs` | NO | Audit log — preserve |
 | `visits` | NO | Frontend analytics — preserve |
@@ -170,7 +162,6 @@ GitHub Actions (cron: daily 09:00 SGT)
 | Translation | `claude-sonnet-4-6` | All sources — better entity disambiguation |
 | Assessment | `claude-sonnet-4-6` | Structured output; runs every 3h |
 | Distillation | `claude-sonnet-4-6` | Rule extraction from failures |
-| Inside AI digest | `claude-sonnet-4-6` | Daily; structured summarisation. Backend runs (digest.py), no frontend display currently. |
 | Top Stories summary | `claude-sonnet-4-6` | Daily; three-pass generate + fact-check + Chinese |
 
 ### Top Stories topic schema
@@ -266,8 +257,7 @@ uv run pytest tests/test_invariants.py
 | `test_call_claude.py` | `_call_claude`, `_extract_json_array`, `_translate_batch`, `_validate_zaobao_categories` |
 | `test_zaobao_scraper.py` | URL→category (incl. sea→None), sitemap regex (singapore/world/sea), china excluded |
 | `test_astro_scraper.py` | Row schema, title cleaning, playlist ID derivation |
-| `test_digest.py` | `_extract_json_object`, model invariants, `_build_content` grouping |
-| `test_weekly_summary.py` | LOOKBACK_DAYS/MIN_NEW_HEADLINES constants, Chinese prompt quality, three-pass `_call_summary` (title_zh/summary_zh populated, 3 Claude calls, token sums) |
+| `test_weekly_summary.py` | LOOKBACK_DAYS/MIN_NEW_HEADLINES constants, Chinese prompt quality, three-pass `_call_summary` (title_zh/summary_zh populated, 3 Claude calls, token sums), `_extract_json_object`, model invariant, `_build_content` grouping |
 | `test_pricing.py` | `get_model_rates()` shape and fallback, `compute_cost_usd` arithmetic, token_usage inserts carry price snapshot columns, schema.sql has price columns |
 
 CI runs two jobs in parallel on every push: `test` (ruff + pytest) and `build-frontend`

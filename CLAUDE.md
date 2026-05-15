@@ -15,7 +15,13 @@ NewsLingo aggregates bilingual (Chinese + English) news from two sources:
 
 All AI tasks use `claude-sonnet-4-6` — translation, assessment, distillation, and weekly summary.
 Headlines are stored in Supabase. Three GitHub Actions jobs run the pipeline.
-LLM observability (token counts, costs, latency) is handled by **Langfuse Cloud** (`langfuse.anthropic` SDK wrapper).
+LLM observability (token counts, costs, latency) is handled by **Langfuse Cloud** (`@observe` decorator pattern).
+
+---
+
+## Engineering Principles
+
+- **Do not reinvent the wheel.** Before writing custom infrastructure (retry logic, HTTP clients, date math, token tracking, HTML parsing, caching), check if a library already in the project or a well-known Python package does it. Examples of past wheel-reinvention that were replaced: custom `pricing.py` → Langfuse; regex og: tag extraction → BeautifulSoup (already in deps). When uncertain, ask.
 
 ---
 

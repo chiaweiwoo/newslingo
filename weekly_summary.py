@@ -42,7 +42,7 @@ claude   = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=120.0)
 
 SUMMARY_MODEL     = "claude-sonnet-4-6"
 LOOKBACK_DAYS     = 14
-MIN_NEW_HEADLINES = 60   # skip regeneration if fewer new headlines since last run
+MIN_NEW_HEADLINES = 0    # TEMP: force run to verify pass-3 fix (restore to 60)
 
 THEMES = ["Politics", "Economy", "Society", "Security", "Technology", "Environment"]
 

@@ -109,8 +109,7 @@ export default function ThisWeekDrawer({ isOpen, onClose }: Props) {
   });
 
   const allTopics   = summary?.payload?.topics ?? [];
-  const tabTopics   = allTopics.filter(t => t.region === activeRegion);
-  const hasAnyChinese = allTopics.some(t => t.title_zh);
+  const tabTopics = allTopics.filter(t => t.region === activeRegion);
 
   return (
     <Drawer isOpen={isOpen} placement="bottom" onClose={onClose}>
@@ -138,32 +137,30 @@ export default function ThisWeekDrawer({ isOpen, onClose }: Props) {
               </Text>
             </Box>
 
-            {/* EN / 中 toggle — only shown when Chinese data is available */}
-            {hasAnyChinese && (
-              <HStack spacing={0} mt={0.5}>
-                {(['en', 'zh'] as const).map((l, i) => (
-                  <Box
-                    key={l}
-                    as="button"
-                    onClick={() => handleLang(l)}
-                    px={2.5} py={1}
-                    fontSize="2xs"
-                    fontWeight="700"
-                    letterSpacing="wide"
-                    color={lang === l ? 'brand.paper' : 'brand.muted'}
-                    bg={lang === l ? 'brand.red' : 'transparent'}
-                    border="1px solid"
-                    borderColor={lang === l ? 'brand.red' : 'brand.rule'}
-                    borderRadius={i === 0 ? '3px 0 0 3px' : '0 3px 3px 0'}
-                    transition="all 0.15s"
-                    _hover={{ color: lang === l ? 'brand.paper' : 'brand.ink' }}
-                    lineHeight="1.4"
-                  >
-                    {l === 'en' ? 'EN' : '中'}
-                  </Box>
-                ))}
-              </HStack>
-            )}
+            {/* EN / 中 toggle — always visible; falls back to EN when title_zh not yet generated */}
+            <HStack spacing={0} mt={0.5}>
+              {(['en', 'zh'] as const).map((l, i) => (
+                <Box
+                  key={l}
+                  as="button"
+                  onClick={() => handleLang(l)}
+                  px={2.5} py={1}
+                  fontSize="2xs"
+                  fontWeight="700"
+                  letterSpacing="wide"
+                  color={lang === l ? 'brand.paper' : 'brand.muted'}
+                  bg={lang === l ? 'brand.red' : 'transparent'}
+                  border="1px solid"
+                  borderColor={lang === l ? 'brand.red' : 'brand.rule'}
+                  borderRadius={i === 0 ? '3px 0 0 3px' : '0 3px 3px 0'}
+                  transition="all 0.15s"
+                  _hover={{ color: lang === l ? 'brand.paper' : 'brand.ink' }}
+                  lineHeight="1.4"
+                >
+                  {l === 'en' ? 'EN' : '中'}
+                </Box>
+              ))}
+            </HStack>
           </Flex>
 
           {/* Region tabs */}

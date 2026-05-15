@@ -243,7 +243,7 @@ export default function App() {
                   <line x1="10" y1="10" x2="14" y2="14" />
                 </svg>
               </Box>
-              {/* Top Stories icon — 4-pointed sparkle */}
+              {/* Top Stories icon — 4-pointed sparkle (8-point polygon) */}
               <Box
                 as="button"
                 onClick={onThisWeekOpen}
@@ -254,7 +254,7 @@ export default function App() {
                 aria-label="Top Stories"
               >
                 <svg width="15" height="15" viewBox="0 0 15 15" fill="currentColor">
-                  <path d="M7.5 0.5 C7.5 0.5 6.8 4.8 4.8 6.8 C2.8 8.8 0.5 7.5 0.5 7.5 C0.5 7.5 2.8 6.2 4.8 8.2 C6.8 10.2 7.5 14.5 7.5 14.5 C7.5 14.5 8.2 10.2 10.2 8.2 C12.2 6.2 14.5 7.5 14.5 7.5 C14.5 7.5 12.2 8.8 10.2 6.8 C8.2 4.8 7.5 0.5 7.5 0.5 Z" />
+                  <path d="M7.5,1 L8.6,6.4 L14,7.5 L8.6,8.6 L7.5,14 L6.4,8.6 L1,7.5 L6.4,6.4 Z" />
                 </svg>
               </Box>
               {/* Overflow menu */}

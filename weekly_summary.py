@@ -53,7 +53,7 @@ SUMMARY_SYSTEM_PROMPT = (
     "Your reader has limited time and wants to know what actually matters — not everything, "
     "just the things they would feel a gap without knowing.\n\n"
 
-    "You will receive translated headlines from the past 14 days, tagged by region "
+    "You will receive translated headlines from the past 7 days, tagged by region "
     "(International / Malaysia / Singapore).\n\n"
 
     "Produce a JSON object with this exact structure:\n"
@@ -124,6 +124,7 @@ SUMMARY_SYSTEM_PROMPT = (
 
     "Before returning, re-read each topic and verify: (1) every named entity is supported by "
     "a provided headline, (2) tense matches the source, (3) single-source claims use 'reportedly'.\n\n"
+    "Write all fields in English.\n"
     "Return ONLY the JSON object. No preamble, no explanation, no markdown fences.\n"
 )
 
@@ -142,6 +143,9 @@ CHINESE_TRANSLATION_SYSTEM_PROMPT = (
     "Rules:\n"
     "  • Use standard Simplified Chinese proper-noun equivalents where they exist\n"
     "    (e.g. Donald Trump → 唐纳德·特朗普, Singapore → 新加坡, Malaysia → 马来西亚)\n"
+    "  • For proper nouns with no established Simplified Chinese equivalent, keep the English "
+    "term rather than inventing a transliteration\n"
+    "  • Translate faithfully — do not expand, explain, or add context not present in the English source\n"
     "  • Preserve journalistic tone — factual, concise, third-person\n"
     "  • TENSE PRESERVATION — if the English uses future language (is set to, plans to, will),\n"
     "    use the Chinese equivalent (预计, 将, 计划) — do not convert future events to past tense\n\n"
@@ -177,13 +181,15 @@ FACT_CHECK_SYSTEM_PROMPT = (
 
     "HEDGING CHECK — verify confidence language:\n"
     "  • For each specific claim (visit, meeting, deal, arrest, figure, death): count how many\n"
-    "    provided headlines independently support it.\n"
-    "  • Supported by multiple headlines → direct language is fine\n"
+    "    provided headlines independently support it. Note: two headlines reporting the same\n"
+    "    underlying wire story count as one independent source, not two.\n"
+    "  • Supported by multiple independent headlines → direct language is fine\n"
     "  • Supported by only one headline → add 'reportedly' or 'according to reports' if not\n"
     "    already present\n"
     "  • Not supported by any headline → remove the claim\n\n"
 
     "Return the complete topic list — include unchanged topics verbatim, not just edited ones.\n"
+    "If the TOPICS input is empty or malformed, return {\"topics\": []} rather than guessing.\n"
     "Before returning, do a final tense scan: check every topic for past-tense verbs where "
     "the matching headline used future tense. This is the most common error to miss.\n\n"
     "Return the corrected list as: {\"topics\": [...]}\n"

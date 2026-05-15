@@ -144,7 +144,10 @@ ASTRO_SYSTEM_PROMPT = (
     "Each object must have exactly two keys: \"title_en\" and \"category\".\n"
     "If a headline cannot be reliably translated, use {\"title_en\": null, \"category\": null} "
     "rather than guessing.\n"
-    "Before returning, verify the array length exactly matches the number of input lines.\n"
+    "Before returning, verify: (1) the array length exactly matches the number of input lines, "
+    "(2) every proper noun (person, place, organisation) in your output is correctly identified — "
+    "re-check any you were uncertain about; "
+    "(3) if no classification rule clearly applies, default to 'International'.\n"
     "Example: [{\"title_en\": \"PM meets king\", \"category\": \"Malaysia\"}, "
     "{\"title_en\": \"Trump signs bill\", \"category\": \"International\"}, "
     "{\"title_en\": \"Singapore budget announced\", \"category\": \"Singapore\"}]"
@@ -189,6 +192,9 @@ ZAOBAO_SYSTEM_PROMPT = (
 
     "CURRENCY: 新元/坡元/元 → S$ (e.g. S$1.2 million)\n\n"
 
+    "EMBEDDED TERMS: If the Chinese headline contains embedded English or Malay words, "
+    "keep them unchanged — do not back-translate them.\n\n"
+
     "STYLE: Singapore English, concise headlines, keep proper nouns.\n\n"
 
     "FAITHFULNESS: Translate the headline as-is. Do not add context, explain abbreviations "
@@ -200,7 +206,8 @@ ZAOBAO_SYSTEM_PROMPT = (
     "Return ONLY a JSON array, one object per input line, same order.\n"
     "Each object must have exactly ONE key: \"title_en\".\n"
     "If a headline cannot be reliably translated, use {\"title_en\": null} rather than guessing.\n"
-    "Before returning, verify the array length exactly matches the number of input lines.\n"
+    "Before returning, verify: (1) the array length exactly matches the number of input lines, "
+    "(2) every proper noun in your output is correctly identified.\n"
     "Example: [{\"title_en\": \"PM meets President\"}, {\"title_en\": \"Flood hits Johor\"}]"
 )
 
@@ -248,11 +255,16 @@ ZAOBAO_SEA_SYSTEM_PROMPT = (
     "romanisation rather than guessing an English equivalent.\n"
     "CLASSIFICATION TIE-BREAK: When genuinely unclear between two categories, prefer 'International'.\n\n"
 
+    "THIRD-COUNTRY AGENCIES: For government agencies or organisations outside Singapore and Malaysia "
+    "that you cannot confidently identify, use the official English name if widely known; otherwise "
+    "keep the Chinese name as romanisation rather than guessing.\n\n"
+
     "Return ONLY a JSON array, one object per input line, same order.\n"
     "Each object must have exactly two keys: \"title_en\" and \"category\".\n"
     "If a headline cannot be reliably translated, use {\"title_en\": null, \"category\": null} "
     "rather than guessing.\n"
-    "Before returning, verify the array length exactly matches the number of input lines.\n"
+    "Before returning, verify: (1) the array length exactly matches the number of input lines, "
+    "(2) every proper noun in your output is correctly identified.\n"
     "Example: [{\"title_en\": \"Thailand PM visits Singapore\", \"category\": \"International\"}, "
     "{\"title_en\": \"Malaysia floods worsen\", \"category\": \"Malaysia\"}, "
     "{\"title_en\": \"Singapore tightens border checks\", \"category\": \"Singapore\"}]"
@@ -288,8 +300,11 @@ ASSESS_SYSTEM_PROMPT = (
     "- Return ONLY a JSON array. No preamble, no explanation, no markdown.\n"
     "- Exactly one object per input, in the same order. Array length must equal input count.\n"
     "- Your response must START with '[' and END with ']'.\n"
+    "If either the ZH or EN value in an input pair is null or empty, score it 1 with "
+    "reason 'missing input' and suggestion ''.\n"
     "Before returning, confirm: (1) array length matches input count, "
-    "(2) every score-1/2 object has both 'reason' and 'suggestion'.\n"
+    "(2) every score-1/2 object has both 'reason' and 'suggestion', "
+    "(3) every score-4/5 has no uncertain proper noun — downgrade to 2 if in doubt.\n"
     "Example: [{\"score\": 5}, {\"score\": 2, \"reason\": \"brief note\", \"suggestion\": \"corrected headline\"}, ...]\n"
 )
 
@@ -301,6 +316,7 @@ DISTILL_SYSTEM_PROMPT = (
 
     "Rules must be:\n"
     "- Specific and directive (e.g. 'Always use MACC for 反贪会, never anti-corruption body')\n"
+    "- Start with an imperative verb: Always, Never, Use, Keep, or similar\n"
     "- Generalised from patterns, not just restating individual examples\n"
     "- Focused on terminology, proper nouns, and structural issues — not style preferences\n"
     "- Grounded in the provided failures — do not invent examples or patterns not present in the input\n\n"

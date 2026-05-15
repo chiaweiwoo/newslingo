@@ -67,8 +67,8 @@ export default function AboutDrawer({ isOpen, onClose }: Props) {
               <VStack spacing={1.5} align="stretch">
                 {[
                   'Headlines are scraped every 3 hours',
-                  'Translated to English by Claude Haiku',
-                  'Quality-checked by Claude Sonnet',
+                  'Translated and quality-checked by Claude Sonnet',
+                  'Top Stories summarised daily from the past 7 days',
                   'Organised by region and date',
                 ].map(step => (
                   <HStack key={step} spacing={2} align="flex-start">
@@ -91,6 +91,8 @@ export default function AboutDrawer({ isOpen, onClose }: Props) {
                   'Tap any English word to look it up',
                   'Speaker icon reads the headline aloud',
                   'Share icon shares the headline via the native share sheet',
+                  '✦ header icon opens Top Stories — weekly digest by region, in EN or 中',
+                  'Pencil icon opens Translation Quiz — type the English, get scored instantly',
                   'Font size and dark mode in ··· → Preferences',
                 ].map(tip => (
                   <HStack key={tip} spacing={2} align="flex-start">

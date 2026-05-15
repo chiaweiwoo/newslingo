@@ -8,7 +8,6 @@ import { useFontSize } from './contexts/FontSizeContext';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { createClient } from '@supabase/supabase-js';
 import AboutDrawer from './components/AboutDrawer';
-import CostsDrawer from './components/CostsDrawer';
 import HeadlineCard from './components/HeadlineCard';
 import QuizDrawer from './components/QuizDrawer';
 import SearchBar from './components/SearchBar';
@@ -70,7 +69,6 @@ export default function App() {
   const { isOpen: isThisWeekOpen,  onOpen: onThisWeekOpen,  onClose: onThisWeekClose  } = useDisclosure();
   const { isOpen: isQuizOpen,      onOpen: onQuizOpen,      onClose: onQuizClose      } = useDisclosure();
   const { isOpen: isStatsOpen,     onOpen: onStatsOpen,     onClose: onStatsClose     } = useDisclosure();
-  const { isOpen: isCostsOpen,     onOpen: onCostsOpen,     onClose: onCostsClose     } = useDisclosure();
 
   // Visit tracking — fire once on mount
   useEffect(() => {
@@ -393,8 +391,6 @@ export default function App() {
 
                   <MenuDivider borderColor="brand.rule" my={1} />
 
-                  <MenuDivider borderColor="brand.rule" my={1} />
-
                   {/* Data group */}
                   <MenuGroup
                     title="Data"
@@ -415,17 +411,6 @@ export default function App() {
                       px={4} py={2.5}
                     >
                       Statistics
-                    </MenuItem>
-                    <MenuItem
-                      onClick={onCostsOpen}
-                      fontSize="xs"
-                      color="brand.ink"
-                      bg="brand.card"
-                      _hover={{ bg: 'brand.paper' }}
-                      _focus={{ bg: 'brand.paper' }}
-                      px={4} py={2.5}
-                    >
-                      AI Costs
                     </MenuItem>
                   </MenuGroup>
 
@@ -560,7 +545,6 @@ export default function App() {
       <ThisWeekDrawer  isOpen={isThisWeekOpen} onClose={onThisWeekClose} />
       <QuizDrawer      isOpen={isQuizOpen}     onClose={onQuizClose} />
       <StatsDrawer     isOpen={isStatsOpen}    onClose={onStatsClose} />
-      <CostsDrawer     isOpen={isCostsOpen}    onClose={onCostsClose} />
     </Box>
   );
 }

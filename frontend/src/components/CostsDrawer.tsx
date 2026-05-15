@@ -71,27 +71,48 @@ export default function CostsDrawer({ isOpen, onClose }: Props) {
 
   // ── Derived metrics ────────────────────────────────────────────────────────
 
-  const allTime    = rows.reduce((s, r) => s + r.cost_usd, 0);
-  const firstDate  = rows.length ? new Date(rows[0].recorded_at) : null;
-  const daysOfData = firstDate
-    ? Math.max(1, (Date.now() - firstDate.getTime()) / (1000 * 60 * 60 * 24))
-    : 1;
+  const now     = new Date();
+  const todayKey = now.toISOString().slice(0, 10); // YYYY-MM-DD
 
-  const dailyAvg   = allTime / daysOfData;
-  const weeklyEst  = dailyAvg * 7;
-  const monthlyEst = dailyAvg * 30;
+  // Group all rows by calendar date
+  const byDate: Record<string, number> = {};
+  for (const r of rows) {
+    const day = r.recorded_at.slice(0, 10);
+    byDate[day] = (byDate[day] ?? 0) + r.cost_usd;
+  }
 
-  // This calendar month
-  const now        = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-  const thisMonth  = rows
+  // Complete days only (exclude today — it's still accumulating)
+  // Take the most recent 30 complete days for the estimate
+  const completeDays = Object.entries(byDate)
+    .filter(([d]) => d < todayKey)
+    .sort(([a], [b]) => b.localeCompare(a)) // newest first
+    .slice(0, 30)
+    .map(([, cost]) => cost);
+
+  // Median daily cost — robust to outlier test days
+  function median(vals: number[]): number {
+    if (!vals.length) return 0;
+    const sorted = [...vals].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 === 0
+      ? (sorted[mid - 1] + sorted[mid]) / 2
+      : sorted[mid];
+  }
+
+  const dailyMedian = median(completeDays);
+  const weeklyEst   = dailyMedian * 7;
+  const monthlyEst  = dailyMedian * 30;
+
+  const allTime       = rows.reduce((s, r) => s + r.cost_usd, 0);
+  const monthStart    = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  const thisMonth     = rows
     .filter(r => r.recorded_at >= monthStart)
     .reduce((s, r) => s + r.cost_usd, 0);
   const daysIntoMonth = now.getDate();
 
   // Last 30 days per task
-  const since30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-  const recentRows = rows.filter(r => r.recorded_at >= since30);
+  const since30     = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const recentRows  = rows.filter(r => r.recorded_at >= since30);
   const recentTotal = recentRows.reduce((s, r) => s + r.cost_usd, 0);
 
   const byTask: Record<string, { cost: number; runs: number }> = {};
@@ -101,11 +122,12 @@ export default function CostsDrawer({ isOpen, onClose }: Props) {
     byTask[r.task].runs += 1;
   }
 
-  const daysLabel = daysOfData < 2
-    ? '1 day'
-    : daysOfData < 30
-    ? `${Math.floor(daysOfData)} days`
-    : `${Math.round(daysOfData / 30)} month${Math.round(daysOfData / 30) !== 1 ? 's' : ''}`;
+  const nDays = completeDays.length;
+  const daysLabel = nDays === 0
+    ? 'today only'
+    : nDays === 1
+    ? '1 complete day'
+    : `${nDays} complete days`;
 
   return (
     <Drawer isOpen={isOpen} placement="bottom" onClose={onClose}>
@@ -126,7 +148,7 @@ export default function CostsDrawer({ isOpen, onClose }: Props) {
             AI Costs
           </Text>
           <Text fontSize="xs" color="brand.muted" fontWeight="400" mt={0.5}>
-            Estimates based on {daysLabel} of history
+            Median daily spend across {daysLabel}
           </Text>
         </DrawerHeader>
 
@@ -174,12 +196,12 @@ export default function CostsDrawer({ isOpen, onClose }: Props) {
                     <Text fontSize="xs" fontWeight="600" color="brand.ink">{fmtCostFull(weeklyEst)}</Text>
                   </HStack>
                   <HStack justify="space-between">
-                    <Text fontSize="xs" color="brand.muted">Per day</Text>
-                    <Text fontSize="xs" fontWeight="600" color="brand.ink">{fmtCost(dailyAvg)}</Text>
+                    <Text fontSize="xs" color="brand.muted">Per day (median)</Text>
+                    <Text fontSize="xs" fontWeight="600" color="brand.ink">{fmtCost(dailyMedian)}</Text>
                   </HStack>
                   <HStack justify="space-between">
                     <Text fontSize="xs" color="brand.muted">Per hour</Text>
-                    <Text fontSize="xs" fontWeight="600" color="brand.ink">{fmtCost(dailyAvg / 24)}</Text>
+                    <Text fontSize="xs" fontWeight="600" color="brand.ink">{fmtCost(dailyMedian / 24)}</Text>
                   </HStack>
                 </VStack>
               </Box>
@@ -250,7 +272,7 @@ export default function CostsDrawer({ isOpen, onClose }: Props) {
               )}
 
               <Text fontSize="2xs" color="brand.muted" textAlign="center" lineHeight="1.6">
-                Prices snapshotted at each job run · USD
+                Estimates use median daily spend to filter out test runs · USD
               </Text>
 
             </VStack>

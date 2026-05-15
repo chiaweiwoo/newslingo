@@ -1,18 +1,20 @@
 /**
  * Translation Quiz
  *
- * Shows a Chinese headline from the past 3 days.
- * User types an English translation, then gets scored using
- * @huggingface/transformers sentence similarity (Xenova/all-MiniLM-L6-v2).
+ * Shows a random Chinese headline. User types an English translation and
+ * gets scored via @huggingface/transformers sentence similarity (in-browser).
  *
- * The model (~23 MB) is loaded lazily on first submit and cached by the browser.
+ * Layout: flex column inside the drawer.
+ *   – Top scrollable zone: headline card + result
+ *   – Bottom sticky zone: textarea + submit/next button
+ * This keeps the input visible when the keyboard opens on mobile.
  */
 
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Box, Center, Divider, Drawer, DrawerBody, DrawerCloseButton,
-  DrawerContent, DrawerHeader, DrawerOverlay, Flex, Spinner,
-  Text, Textarea, VStack, HStack,
+  DrawerContent, DrawerHeader, DrawerOverlay, Flex,
+  Spinner, Text, Textarea, VStack, HStack,
 } from '@chakra-ui/react';
 import { useQuery } from '@tanstack/react-query';
 import { createClient } from '@supabase/supabase-js';
@@ -26,62 +28,61 @@ const supabase = createClient(
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Headline {
-  id:           string;
-  title_zh:     string;
-  title_en:     string;
-  category:     string;
-  published_at: string;
-  channel:      string;
+  id:            string;
+  title_zh:      string;
+  title_en:      string;
+  category:      string;
+  published_at:  string;
+  channel:       string;
   thumbnail_url?: string;
 }
 
-// ── Score helpers ─────────────────────────────────────────────────────────────
+type Phase = 'input' | 'scoring' | 'result';
 
-function scoreBand(score: number): { label: string; color: string; emoji: string } {
-  if (score >= 85) return { label: 'Excellent',       color: '#2e7d32', emoji: '🎯' };
-  if (score >= 65) return { label: 'Good',            color: '#1565c0', emoji: '👍' };
-  if (score >= 45) return { label: 'Partially right', color: '#e65100', emoji: '🤔' };
-  return              { label: 'Keep practising',  color: '#b71c1c', emoji: '📚' };
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function scoreBand(score: number) {
+  if (score >= 85) return { label: 'Excellent',        color: '#2e7d32', emoji: '🎯' };
+  if (score >= 65) return { label: 'Good',             color: '#1565c0', emoji: '👍' };
+  if (score >= 45) return { label: 'Partially right',  color: '#e65100', emoji: '🤔' };
+  return              { label: 'Keep practising',   color: '#b71c1c', emoji: '📚' };
 }
 
-function regionIcon(category: string): string {
-  if (category === 'Singapore') return '🇸🇬';
-  if (category === 'Malaysia')  return '🇲🇾';
+function regionIcon(cat: string) {
+  if (cat === 'Singapore') return '🇸🇬';
+  if (cat === 'Malaysia')  return '🇲🇾';
   return '🌍';
 }
 
-function channelLabel(channel: string): string {
-  if (channel === 'zaobao') return '联合早报';
-  if (channel === 'astro')  return 'Astro 本地圈';
-  return channel;
+function channelLabel(ch: string) {
+  return ch === 'zaobao' ? '联合早报' : ch === 'astro' ? 'Astro 本地圈' : ch;
 }
 
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-MY', {
-    day: 'numeric', month: 'short',
-  });
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' });
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-interface Props {
-  isOpen:  boolean;
-  onClose: () => void;
-}
+interface Props { isOpen: boolean; onClose: () => void; }
 
 export default function QuizDrawer({ isOpen, onClose }: Props) {
-  const [seenIds, setSeenIds]   = useState<Set<string>>(new Set());
-  const [current, setCurrent]   = useState<Headline | null>(null);
+  const [seenIds, setSeenIds]     = useState<Set<string>>(new Set());
+  const [current, setCurrent]     = useState<Headline | null>(null);
   const [userInput, setUserInput] = useState('');
-  const [score, setScore]       = useState<number | null>(null);
-  const [phase, setPhase]       = useState<'input' | 'scoring' | 'result'>('input');
-  const textareaRef             = useRef<HTMLTextAreaElement>(null);
+  const [score, setScore]         = useState<number | null>(null);
+  const [phase, setPhase]         = useState<Phase>('input');
+  const textareaRef               = useRef<HTMLTextAreaElement>(null);
+  const scrollZoneRef             = useRef<HTMLDivElement>(null);
 
-  // ── Fetch headline pool (past 3 days) ──────────────────────────────────────
-  const cutoff = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+  // Cutoff: past 3 days
+  const [cutoff] = useState(
+    () => new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString()
+  );
 
+  // ── Fetch pool ──────────────────────────────────────────────────────────────
   const { data: pool = [], isLoading: poolLoading } = useQuery({
-    queryKey: ['quiz-pool'],
+    queryKey: ['quiz-pool', cutoff],
     queryFn: async (): Promise<Headline[]> => {
       const { data } = await supabase
         .from('headlines')
@@ -90,27 +91,27 @@ export default function QuizDrawer({ isOpen, onClose }: Props) {
         .not('title_en', 'is', null)
         .not('title_zh', 'is', null)
         .order('published_at', { ascending: false })
-        .limit(100);
+        .limit(200);
       return (data as Headline[]) ?? [];
     },
     enabled: isOpen,
     staleTime: 5 * 60 * 1000,
   });
 
-  // ── Pick first headline once pool loads ───────────────────────────────────
+  // ── Pick first headline when pool loads OR drawer reopens ──────────────────
   useEffect(() => {
-    if (pool.length > 0 && !current) {
-      pickNext(pool, new Set());
+    if (isOpen && pool.length > 0 && !current) {
+      pickNext(pool, seenIds);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pool]);
+  }, [isOpen, pool]);
 
-  // ── Warm up model when drawer opens ──────────────────────────────────────
+  // ── Warm up model when drawer opens ────────────────────────────────────────
   useEffect(() => {
     if (isOpen) warmUpModel();
   }, [isOpen]);
 
-  // ── Reset on close ────────────────────────────────────────────────────────
+  // ── Reset state on close ───────────────────────────────────────────────────
   useEffect(() => {
     if (!isOpen) {
       setSeenIds(new Set());
@@ -121,15 +122,20 @@ export default function QuizDrawer({ isOpen, onClose }: Props) {
     }
   }, [isOpen]);
 
+  // ── Pick next ──────────────────────────────────────────────────────────────
   function pickNext(src: Headline[], seen: Set<string>) {
     const unseen = src.filter(h => !seen.has(h.id));
-    const pool2  = unseen.length > 0 ? unseen : src; // wrap around when exhausted
-    const next   = pool2[Math.floor(Math.random() * pool2.length)];
+    const candidates = unseen.length > 0 ? unseen : src; // wrap silently
+    const next = candidates[Math.floor(Math.random() * candidates.length)];
     setCurrent(next);
     setUserInput('');
     setScore(null);
     setPhase('input');
-    setTimeout(() => textareaRef.current?.focus(), 100);
+    // Scroll content back to top and focus textarea
+    setTimeout(() => {
+      scrollZoneRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+      textareaRef.current?.focus();
+    }, 80);
   }
 
   function handleNext() {
@@ -145,11 +151,17 @@ export default function QuizDrawer({ isOpen, onClose }: Props) {
     try {
       const s = await computeScore(userInput.trim(), current.title_en);
       setScore(s);
-      setPhase('result');
     } catch {
       setScore(0);
-      setPhase('result');
     }
+    setPhase('result');
+    // Scroll result into view
+    setTimeout(() => {
+      scrollZoneRef.current?.scrollTo({
+        top: scrollZoneRef.current.scrollHeight,
+        behavior: 'smooth',
+      });
+    }, 150);
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -160,188 +172,153 @@ export default function QuizDrawer({ isOpen, onClose }: Props) {
     }
   }
 
-  // ── Render ────────────────────────────────────────────────────────────────
-
   const band = score !== null ? scoreBand(score) : null;
+
+  // ── Empty / loading states ─────────────────────────────────────────────────
+
+  const bodyContent = poolLoading ? (
+    <Center flex={1}><Spinner color="brand.red" size="md" /></Center>
+  ) : !current ? (
+    <Center flex={1}>
+      <VStack spacing={2}>
+        <Text fontSize="xl">📭</Text>
+        <Text fontSize="sm" color="brand.ink" fontWeight="600">No recent headlines</Text>
+        <Text fontSize="xs" color="brand.muted" textAlign="center" maxW="220px" lineHeight="1.6">
+          Headlines from the past 3 days will appear here after the next job run at 09:00 SGT.
+        </Text>
+      </VStack>
+    </Center>
+  ) : null;
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <Drawer isOpen={isOpen} placement="bottom" onClose={onClose}>
       <DrawerOverlay />
       <DrawerContent
-        maxH="85vh"
+        maxH="88dvh"
         style={{ maxWidth: '600px', marginLeft: 'auto', marginRight: 'auto' }}
-        borderTopRadius="lg"
+        borderTopRadius="xl"
         bg="brand.paper"
+        display="flex"
+        flexDirection="column"
+        overflow="hidden"
       >
-        <DrawerCloseButton color="brand.muted" mt={1} />
+        <DrawerCloseButton color="brand.muted" top={3} right={4} zIndex={1} />
 
-        <DrawerHeader borderBottom="1px solid" borderColor="brand.rule" pb={3} pt={4}>
+        {/* ── Header ─────────────────────────────────────────────────────── */}
+        <DrawerHeader
+          px={4} pt={4} pb={3}
+          borderBottom="1px solid"
+          borderColor="brand.rule"
+          flexShrink={0}
+        >
           <Text
             fontSize="md" fontWeight="700" color="brand.ink"
             fontFamily="'Noto Serif SC', 'Georgia', serif"
+            pr={8}
           >
             Translation Quiz
           </Text>
-          <Text fontSize="xs" color="brand.muted" fontWeight="400" mt={0.5}>
-            Translate the headline — scored by AI semantic similarity.
+          <Text fontSize="xs" color="brand.muted" fontWeight="400" mt={0.5} lineHeight="1.5">
+            Read the Chinese headline · type your best English translation.
           </Text>
         </DrawerHeader>
 
-        <DrawerBody py={4} overflowY="auto">
-          {poolLoading ? (
-            <Center py={10}><Spinner color="brand.red" size="md" /></Center>
-          ) : !current ? (
-            <Center py={10}>
-              <VStack spacing={2}>
-                <Text fontSize="xl">📭</Text>
-                <Text fontSize="sm" color="brand.ink" fontWeight="600">No headlines yet</Text>
-                <Text fontSize="xs" color="brand.muted" textAlign="center" maxW="240px">
-                  Headlines from the past 3 days will appear here after the next job run.
-                </Text>
-              </VStack>
-            </Center>
-          ) : (
-            <VStack spacing={4} align="stretch">
+        {/* ── Body: scrollable zone + sticky input ───────────────────────── */}
+        <DrawerBody p={0} display="flex" flexDirection="column" overflow="hidden">
 
-              {/* Headline card */}
+          {bodyContent ? (
+            <Flex flex={1} direction="column" justify="center">{bodyContent}</Flex>
+          ) : current ? (
+            <>
+              {/* Scrollable content */}
               <Box
-                bg="brand.card"
-                border="1px solid"
-                borderColor="brand.rule"
-                borderRadius="md"
-                overflow="hidden"
+                ref={scrollZoneRef}
+                flex={1}
+                overflowY="auto"
+                px={4}
+                pt={4}
+                pb={2}
+                sx={{ WebkitOverflowScrolling: 'touch' }}
               >
-                {current.thumbnail_url && (
-                  <Box
-                    as="img"
-                    src={current.thumbnail_url}
-                    alt=""
-                    w="100%"
-                    h="140px"
-                    objectFit="cover"
-                    display="block"
-                  />
-                )}
-                <Box p={4}>
-                  {/* Source + date */}
-                  <HStack spacing={1.5} mb={2}>
-                    <Text fontSize="2xs" color="brand.red" fontWeight="700">
-                      {channelLabel(current.channel)}
-                    </Text>
-                    <Text fontSize="2xs" color="brand.muted">·</Text>
-                    <Text fontSize="2xs" color="brand.muted">
-                      {regionIcon(current.category)} {current.category}
-                    </Text>
-                    <Text fontSize="2xs" color="brand.muted">·</Text>
-                    <Text fontSize="2xs" color="brand.muted">
-                      {formatDate(current.published_at)}
-                    </Text>
-                  </HStack>
-
-                  {/* Chinese headline */}
-                  <Text
-                    fontSize="lg"
-                    fontWeight="700"
-                    color="brand.ink"
-                    lineHeight="1.5"
-                    fontFamily="'Noto Serif SC', 'Georgia', serif"
-                  >
-                    {current.title_zh}
-                  </Text>
-                </Box>
-              </Box>
-
-              {/* Input area */}
-              <Box>
-                <Text fontSize="2xs" fontWeight="700" color="brand.muted"
-                  textTransform="uppercase" letterSpacing="wider" mb={1.5}>
-                  Your English translation
-                </Text>
-                <Textarea
-                  ref={textareaRef}
-                  value={userInput}
-                  onChange={e => setUserInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder="Type your translation here…"
-                  size="sm"
-                  rows={3}
-                  resize="none"
-                  isDisabled={phase !== 'input'}
-                  bg="brand.card"
-                  borderColor="brand.rule"
-                  color="brand.ink"
-                  _placeholder={{ color: 'brand.muted' }}
-                  _focus={{ borderColor: 'brand.red', boxShadow: 'none' }}
-                  fontSize="sm"
-                  fontFamily="inherit"
-                />
-              </Box>
-
-              {/* Submit / scoring / result */}
-              {phase === 'input' && (
+                {/* Headline card */}
                 <Box
-                  as="button"
-                  onClick={handleSubmit}
-                  isDisabled={!userInput.trim()}
-                  bg={userInput.trim() ? 'brand.red' : 'brand.rule'}
-                  color={userInput.trim() ? 'white' : 'brand.muted'}
-                  px={4} py={2.5}
-                  borderRadius="sm"
-                  fontSize="xs"
-                  fontWeight="700"
-                  letterSpacing="wide"
-                  textTransform="uppercase"
-                  cursor={userInput.trim() ? 'pointer' : 'default'}
-                  transition="all 0.15s"
-                  textAlign="center"
-                  _hover={userInput.trim() ? { opacity: 0.88 } : {}}
+                  bg="brand.card"
+                  border="1px solid"
+                  borderColor="brand.rule"
+                  borderRadius="md"
+                  overflow="hidden"
+                  mb={4}
                 >
-                  Submit  ↵
-                </Box>
-              )}
-
-              {phase === 'scoring' && (
-                <Center py={3}>
-                  <HStack spacing={2}>
-                    <Spinner size="sm" color="brand.red" />
-                    <Text fontSize="xs" color="brand.muted">
-                      Scoring with AI…
+                  {current.thumbnail_url && (
+                    <Box
+                      as="img"
+                      src={current.thumbnail_url}
+                      alt=""
+                      w="100%"
+                      h="130px"
+                      objectFit="cover"
+                      display="block"
+                    />
+                  )}
+                  <Box px={4} py={3}>
+                    <HStack spacing={1} mb={2} flexWrap="wrap">
+                      <Text fontSize="2xs" color="brand.red" fontWeight="700">
+                        {channelLabel(current.channel)}
+                      </Text>
+                      <Text fontSize="2xs" color="brand.muted">·</Text>
+                      <Text fontSize="2xs" color="brand.muted">
+                        {regionIcon(current.category)} {current.category}
+                      </Text>
+                      <Text fontSize="2xs" color="brand.muted">·</Text>
+                      <Text fontSize="2xs" color="brand.muted">
+                        {formatDate(current.published_at)}
+                      </Text>
+                    </HStack>
+                    <Text
+                      fontSize="xl"
+                      fontWeight="700"
+                      color="brand.ink"
+                      lineHeight="1.5"
+                      fontFamily="'Noto Serif SC', 'Georgia', serif"
+                    >
+                      {current.title_zh}
                     </Text>
-                  </HStack>
-                </Center>
-              )}
+                  </Box>
+                </Box>
 
-              {phase === 'result' && band && score !== null && (
-                <VStack spacing={3} align="stretch">
-                  {/* Score display */}
+                {/* Result section — shown after scoring */}
+                {phase === 'result' && band && score !== null && (
                   <Box
                     bg="brand.card"
                     border="1px solid"
                     borderColor="brand.rule"
                     borderRadius="md"
                     p={4}
+                    mb={2}
                   >
+                    {/* Score header */}
                     <Flex align="center" justify="space-between" mb={3}>
                       <HStack spacing={2}>
                         <Text fontSize="xl">{band.emoji}</Text>
                         <Box>
-                          <Text fontSize="sm" fontWeight="700" color={band.color}>
+                          <Text fontSize="sm" fontWeight="700" color={band.color} lineHeight="1.2">
                             {band.label}
                           </Text>
-                          <Text fontSize="2xs" color="brand.muted">
-                            Similarity score: {score}/100
+                          <Text fontSize="2xs" color="brand.muted" mt={0.5}>
+                            {score}/100
                           </Text>
                         </Box>
                       </HStack>
-                      {/* Score bar */}
-                      <Box w="72px">
-                        <Box h="6px" bg="brand.rule" borderRadius="full" overflow="hidden">
+                      <Box w="64px">
+                        <Box h="5px" bg="brand.rule" borderRadius="full" overflow="hidden">
                           <Box
                             h="100%"
                             w={`${score}%`}
                             bg={band.color}
                             borderRadius="full"
-                            transition="width 0.4s ease"
+                            transition="width 0.5s ease"
                           />
                         </Box>
                       </Box>
@@ -349,36 +326,98 @@ export default function QuizDrawer({ isOpen, onClose }: Props) {
 
                     <Divider borderColor="brand.rule" mb={3} />
 
-                    {/* Side-by-side comparison */}
-                    <VStack spacing={2} align="stretch">
+                    <VStack spacing={3} align="stretch">
                       <Box>
-                        <Text fontSize="2xs" fontWeight="700" color="brand.muted"
-                          textTransform="uppercase" letterSpacing="wider" mb={0.5}>
+                        <Text
+                          fontSize="2xs" fontWeight="700" color="brand.muted"
+                          textTransform="uppercase" letterSpacing="wider" mb={1}
+                        >
                           Your answer
                         </Text>
-                        <Text fontSize="xs" color="brand.ink" lineHeight="1.6">
+                        <Text fontSize="sm" color="brand.ink" lineHeight="1.6">
                           {userInput.trim()}
                         </Text>
                       </Box>
                       <Box>
-                        <Text fontSize="2xs" fontWeight="700" color="brand.red"
-                          textTransform="uppercase" letterSpacing="wider" mb={0.5}>
+                        <Text
+                          fontSize="2xs" fontWeight="700" color="brand.red"
+                          textTransform="uppercase" letterSpacing="wider" mb={1}
+                        >
                           Original translation
                         </Text>
-                        <Text fontSize="xs" color="brand.ink" lineHeight="1.6">
+                        <Text fontSize="sm" color="brand.ink" lineHeight="1.6">
                           {current.title_en}
                         </Text>
                       </Box>
                     </VStack>
                   </Box>
+                )}
+              </Box>
 
-                  {/* Next button */}
+              {/* ── Sticky bottom: input + action button ─────────────────── */}
+              <Box
+                px={4} pt={3} pb={4}
+                borderTop="1px solid"
+                borderColor="brand.rule"
+                bg="brand.paper"
+                flexShrink={0}
+              >
+                {(phase === 'input' || phase === 'scoring') && (
+                  <>
+                    <Textarea
+                      ref={textareaRef}
+                      value={userInput}
+                      onChange={e => setUserInput(e.target.value)}
+                      onKeyDown={handleKeyDown}
+                      placeholder="Type your English translation…"
+                      size="sm"
+                      rows={2}
+                      resize="none"
+                      isDisabled={phase === 'scoring'}
+                      bg="brand.card"
+                      borderColor="brand.rule"
+                      color="brand.ink"
+                      _placeholder={{ color: 'brand.muted' }}
+                      _focus={{ borderColor: 'brand.red', boxShadow: 'none' }}
+                      fontSize="sm"
+                      fontFamily="inherit"
+                      mb={2}
+                    />
+                    <Box
+                      as="button"
+                      onClick={handleSubmit}
+                      w="100%"
+                      py={2.5}
+                      bg={userInput.trim() && phase === 'input' ? 'brand.red' : 'brand.rule'}
+                      color={userInput.trim() && phase === 'input' ? 'white' : 'brand.muted'}
+                      borderRadius="sm"
+                      fontSize="xs"
+                      fontWeight="700"
+                      letterSpacing="wide"
+                      textTransform="uppercase"
+                      cursor={userInput.trim() && phase === 'input' ? 'pointer' : 'default'}
+                      transition="all 0.15s"
+                      textAlign="center"
+                      _hover={userInput.trim() && phase === 'input' ? { opacity: 0.88 } : {}}
+                    >
+                      {phase === 'scoring' ? (
+                        <HStack justify="center" spacing={2}>
+                          <Spinner size="xs" color="brand.muted" />
+                          <Text fontSize="xs" fontWeight="700" letterSpacing="wide">Scoring…</Text>
+                        </HStack>
+                      ) : 'Submit'}
+                    </Box>
+                  </>
+                )}
+
+                {phase === 'result' && (
                   <Box
                     as="button"
                     onClick={handleNext}
+                    w="100%"
+                    py={2.5}
                     bg="brand.red"
                     color="white"
-                    px={4} py={2.5}
                     borderRadius="sm"
                     fontSize="xs"
                     fontWeight="700"
@@ -389,17 +428,12 @@ export default function QuizDrawer({ isOpen, onClose }: Props) {
                     textAlign="center"
                     _hover={{ opacity: 0.88 }}
                   >
-                    Next headline  ↵
+                    Next headline →
                   </Box>
-                </VStack>
-              )}
-
-              <Text fontSize="2xs" color="brand.muted" textAlign="center" pt={1}>
-                {pool.filter(h => !seenIds.has(h.id)).length} headlines remaining
-                {pool.length > 0 && ` · ${pool.length} in pool`}
-              </Text>
-            </VStack>
-          )}
+                )}
+              </Box>
+            </>
+          ) : null}
         </DrawerBody>
       </DrawerContent>
     </Drawer>

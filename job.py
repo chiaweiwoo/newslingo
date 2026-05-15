@@ -9,8 +9,9 @@ import sys
 import time
 from datetime import datetime
 
+import anthropic
 from dotenv import load_dotenv
-from langfuse.anthropic import anthropic
+from langfuse.decorators import langfuse_context, observe
 
 from scrapers import astro as astro_scraper
 from scrapers import zaobao as zaobao_scraper
@@ -389,6 +390,7 @@ def _extract_json_array(text: str) -> str | None:
     return text[first:last + 1]
 
 
+@observe(as_type="generation")
 def _call_claude(model: str, system: str, content: str, use_prefill: bool = True) -> list[dict]:
     """Call Claude expecting a JSON array.
 
@@ -417,6 +419,10 @@ def _call_claude(model: str, system: str, content: str, use_prefill: bool = True
             max_tokens=16000,
             system=system,
             messages=messages,
+        )
+        langfuse_context.update_current_observation(
+            model=model,
+            usage={"input": msg.usage.input_tokens, "output": msg.usage.output_tokens},
         )
         body = msg.content[0].text if msg.content else ""
 

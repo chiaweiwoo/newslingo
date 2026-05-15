@@ -23,8 +23,9 @@ import sys
 import types
 from datetime import datetime, timedelta, timezone
 
+import anthropic
 from dotenv import load_dotenv
-from langfuse.anthropic import anthropic
+from langfuse.decorators import langfuse_context, observe
 
 from supabase import create_client
 
@@ -224,6 +225,7 @@ def _parse_topics(body: str, label: str) -> dict:
     )
 
 
+@observe(as_type="generation")
 def _call_summary(content: str) -> tuple[dict, object]:
     """Two-pass generation: produce topics then fact-check them.
 
@@ -303,6 +305,10 @@ def _call_summary(content: str) -> tuple[dict, object]:
                          + msg3.usage.input_tokens),
         output_tokens = (msg1.usage.output_tokens + msg2.usage.output_tokens
                          + msg3.usage.output_tokens),
+    )
+    langfuse_context.update_current_observation(
+        model=SUMMARY_MODEL,
+        usage={"input": combined.input_tokens, "output": combined.output_tokens},
     )
     return translated, combined
 

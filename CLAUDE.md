@@ -208,8 +208,21 @@ Each topic in `weekly_summary.payload.topics`:
 | Share | `HeadlineCard.shareHeadline()` | Web Share API on mobile; clipboard + toast on desktop |
 | Font size | `FontSizeContext` + Preferences menu | S/M/L; persisted in localStorage |
 | Dark mode | `theme.ts` + Preferences menu | Chakra color mode; warm dark palette |
-| Top Stories | `ThisWeekDrawer` | Header icon (newspaper SVG); 3-tab layout (Int/SG/MY); EN\|中 language toggle; no expanded analysis; `localStorage('topStories.lang')` |
+| Top Stories | `ThisWeekDrawer` | Header icon (4-pt sparkle SVG); 3-tab layout (Int/SG/MY); EN\|中 language toggle; no expanded analysis; `localStorage('topStories.lang')` |
+| Translation Quiz | `QuizDrawer` | ··· → Learn → Translation Quiz; random headline from past 3 days; user types EN translation; scored 0–100 via `useSemanticScore` (semantic similarity) |
 | Costs | `CostsDrawer` | token_usage past 30 days, grouped by task |
+
+### Translation Quiz — Transformer.js scoring
+
+`src/hooks/useSemanticScore.ts` — lazy-loads `@huggingface/transformers` (~558KB JS + 23MB WASM) only when the quiz is first used. Model: `Xenova/all-MiniLM-L6-v2` (sentence similarity). Module-level singleton — loaded once per session, cached by the browser.
+
+`computeScore(userText, referenceText)` → `Promise<number>` (0–100, cosine similarity × 100).
+
+`warmUpModel()` — call on drawer open to pre-fetch the model before the user submits.
+
+Key Vite config: `optimizeDeps.exclude: ['@huggingface/transformers']` — prevents Vite from bundling the ONNX runtime into the main chunk. The transformers library is a separate code-split chunk.
+
+Score bands: ≥85 Excellent · ≥65 Good · ≥45 Partially right · <45 Keep practising.
 
 ### Theme tokens
 `brand.red` is static (`#c8102e`). All others (`brand.paper/ink/muted/rule/card`) are

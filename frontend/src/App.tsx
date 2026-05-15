@@ -11,6 +11,7 @@ import AboutDrawer from './components/AboutDrawer';
 import CostsDrawer from './components/CostsDrawer';
 import HeadlineCard from './components/HeadlineCard';
 import InsideAIDrawer from './components/InsideAIDrawer';
+import QuizDrawer from './components/QuizDrawer';
 import SearchBar from './components/SearchBar';
 import StatsDrawer from './components/StatsDrawer';
 import ThisWeekDrawer from './components/ThisWeekDrawer';
@@ -70,6 +71,7 @@ export default function App() {
   const { isOpen: isAboutOpen,     onOpen: onAboutOpen,     onClose: onAboutClose     } = useDisclosure();
   const { isOpen: isInsideAIOpen,  onOpen: onInsideAIOpen,  onClose: onInsideAIClose  } = useDisclosure();
   const { isOpen: isThisWeekOpen,  onOpen: onThisWeekOpen,  onClose: onThisWeekClose  } = useDisclosure();
+  const { isOpen: isQuizOpen,      onOpen: onQuizOpen,      onClose: onQuizClose      } = useDisclosure();
   const { isOpen: isStatsOpen,     onOpen: onStatsOpen,     onClose: onStatsClose     } = useDisclosure();
   const { isOpen: isTrafficOpen,   onOpen: onTrafficOpen,   onClose: onTrafficClose   } = useDisclosure();
   const { isOpen: isCostsOpen,     onOpen: onCostsOpen,     onClose: onCostsClose     } = useDisclosure();
@@ -241,7 +243,7 @@ export default function App() {
                   <line x1="10" y1="10" x2="14" y2="14" />
                 </svg>
               </Box>
-              {/* Top Stories icon */}
+              {/* Top Stories icon — 4-pointed sparkle */}
               <Box
                 as="button"
                 onClick={onThisWeekOpen}
@@ -251,36 +253,9 @@ export default function App() {
                 lineHeight="1"
                 aria-label="Top Stories"
               >
-                <svg width="15" height="15" viewBox="0 0 15 15" fill="none"
-                  stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="1.5" y="2" width="12" height="11" rx="1.5" />
-                  <line x1="4" y1="5.5" x2="11" y2="5.5" />
-                  <line x1="4" y1="8"   x2="11" y2="8"   />
-                  <line x1="4" y1="10.5" x2="8" y2="10.5" />
+                <svg width="15" height="15" viewBox="0 0 15 15" fill="currentColor">
+                  <path d="M7.5 0.5 C7.5 0.5 6.8 4.8 4.8 6.8 C2.8 8.8 0.5 7.5 0.5 7.5 C0.5 7.5 2.8 6.2 4.8 8.2 C6.8 10.2 7.5 14.5 7.5 14.5 C7.5 14.5 8.2 10.2 10.2 8.2 C12.2 6.2 14.5 7.5 14.5 7.5 C14.5 7.5 12.2 8.8 10.2 6.8 C8.2 4.8 7.5 0.5 7.5 0.5 Z" />
                 </svg>
-              </Box>
-              {/* Dark mode toggle */}
-              <Box
-                as="button"
-                onClick={toggleColorMode}
-                color="gray.500"
-                _hover={{ color: 'white' }}
-                transition="color 0.15s"
-                lineHeight="1"
-                aria-label={colorMode === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
-              >
-                {colorMode === 'light' ? (
-                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none"
-                    stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                    <path d="M11.5 8A5.5 5.5 0 0 1 6 2.5a5.5 5.5 0 1 0 5.5 5.5z" />
-                  </svg>
-                ) : (
-                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none"
-                    stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                    <circle cx="7" cy="7" r="2.5" />
-                    <path d="M7 1v1.5M7 11.5V13M1 7h1.5M11.5 7H13M2.9 2.9l1.1 1.1M10 10l1.1 1.1M2.9 11.1l1.1-1.1M10 4l1.1-1.1" />
-                  </svg>
-                )}
               </Box>
               {/* Overflow menu */}
               <Menu placement="bottom-end">
@@ -414,6 +389,17 @@ export default function App() {
                     textTransform="uppercase"
                     letterSpacing="widest"
                   >
+                    <MenuItem
+                      onClick={onQuizOpen}
+                      fontSize="xs"
+                      color="brand.ink"
+                      bg="brand.card"
+                      _hover={{ bg: 'brand.paper' }}
+                      _focus={{ bg: 'brand.paper' }}
+                      px={4} py={2.5}
+                    >
+                      Translation Quiz
+                    </MenuItem>
                     <MenuItem
                       onClick={onInsideAIOpen}
                       fontSize="xs"
@@ -604,6 +590,7 @@ export default function App() {
       <AboutDrawer     isOpen={isAboutOpen}    onClose={onAboutClose} />
       <InsideAIDrawer  isOpen={isInsideAIOpen} onClose={onInsideAIClose} />
       <ThisWeekDrawer  isOpen={isThisWeekOpen} onClose={onThisWeekClose} />
+      <QuizDrawer      isOpen={isQuizOpen}     onClose={onQuizClose} />
       <StatsDrawer     isOpen={isStatsOpen}    onClose={onStatsClose} />
       <TrafficDrawer   isOpen={isTrafficOpen}  onClose={onTrafficClose} />
       <CostsDrawer     isOpen={isCostsOpen}    onClose={onCostsClose} />

@@ -52,14 +52,14 @@ def _translations_json(topics: list[dict]) -> str:
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 class TestConstants:
-    def test_lookback_days_is_14(self):
-        assert weekly_summary.LOOKBACK_DAYS == 14, (
-            "LOOKBACK_DAYS must be 14 — rolling 14-day window for Top Stories."
+    def test_lookback_days_is_7(self):
+        assert weekly_summary.LOOKBACK_DAYS == 7, (
+            "LOOKBACK_DAYS must be 7 — rolling 7-day window for Top Stories."
         )
 
-    def test_min_new_headlines_is_60(self):
-        assert weekly_summary.MIN_NEW_HEADLINES == 60, (
-            "MIN_NEW_HEADLINES must be 60 — calibrated for the 14-day window."
+    def test_min_new_headlines_is_30(self):
+        assert weekly_summary.MIN_NEW_HEADLINES == 30, (
+            "MIN_NEW_HEADLINES must be 30 — calibrated for the 7-day window."
         )
 
 

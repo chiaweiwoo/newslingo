@@ -264,12 +264,16 @@ def _call_summary(content: str) -> tuple[dict, object]:
     translation_input = json.dumps(corrected, ensure_ascii=False, indent=2)
     msg3 = claude.messages.create(
         model=SUMMARY_MODEL,
-        max_tokens=4000,
+        max_tokens=8000,
         system=CHINESE_TRANSLATION_SYSTEM_PROMPT,
         messages=[{"role": "user", "content": translation_input}],
     )
-    translated = _parse_topics(msg3.content[0].text if msg3.content else "", "pass-3")
-    print(f"[summary] pass-3: {len(translated.get('topics', []))} topics translated to Chinese", flush=True)
+    try:
+        translated = _parse_topics(msg3.content[0].text if msg3.content else "", "pass-3")
+        print(f"[summary] pass-3: {len(translated.get('topics', []))} topics translated to Chinese", flush=True)
+    except ValueError as e:
+        print(f"[summary] pass-3 FAILED (falling back to pass-2 result): {e}", flush=True)
+        translated = corrected
 
     # Combine usage from all three calls
     combined = types.SimpleNamespace(

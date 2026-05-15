@@ -1,8 +1,18 @@
+/**
+ * AI Costs drawer
+ *
+ * Fetches all historical token_usage rows and computes:
+ *   - Daily / weekly / monthly cost estimates
+ *   - This calendar month so far
+ *   - All-time total
+ *   - Per-task breakdown (last 30 days)
+ */
+
 import React from 'react';
 import {
-  Drawer, DrawerBody, DrawerHeader, DrawerOverlay, DrawerContent,
-  DrawerCloseButton, Box, Text, VStack, HStack, Spinner,
-  Center, Divider,
+  Box, Center, Divider, Drawer, DrawerBody, DrawerCloseButton,
+  DrawerContent, DrawerHeader, DrawerOverlay,
+  HStack, Spinner, Text, VStack,
 } from '@chakra-ui/react';
 import { useQuery } from '@tanstack/react-query';
 import { createClient } from '@supabase/supabase-js';
@@ -15,191 +25,232 @@ const supabase = createClient(
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface UsageRow {
-  task:          string;
-  model:         string;
-  input_tokens:  number;
-  output_tokens: number;
-  cost_usd:      number;
-  recorded_at:   string;
-}
-
-interface TaskSummary {
-  task:         string;
-  model:        string;
-  totalInput:   number;
-  totalOutput:  number;
-  totalCost:    number;
-  runs:         number;
+  task:        string;
+  cost_usd:    number;
+  recorded_at: string;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const TASK_META: Record<string, { label: string; description: string; icon: string }> = {
-  translation: { label: 'Translation',  description: 'Chinese → English headlines', icon: '🔤' },
-  feedback:    { label: 'Feedback',      description: 'Quality scoring & rule improvement', icon: '🔄' },
-  insights:    { label: 'Insights',      description: 'Inside AI digest & This Week summary', icon: '💡' },
-};
-
-const TASK_ORDER = ['translation', 'feedback', 'insights'];
-
-function fmtTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000)     return `${(n / 1_000).toFixed(1)}k`;
-  return String(n);
-}
-
 function fmtCost(usd: number): string {
   if (usd < 0.001) return '<$0.001';
   if (usd < 1)     return `$${usd.toFixed(3)}`;
+  if (usd < 10)    return `$${usd.toFixed(2)}`;
+  return `$${usd.toFixed(1)}`;
+}
+
+function fmtCostFull(usd: number): string {
+  if (usd < 0.01) return '<$0.01';
   return `$${usd.toFixed(2)}`;
 }
 
+const TASK_META: Record<string, { label: string; color: string }> = {
+  translation: { label: 'Translation', color: '#1565c0' },
+  feedback:    { label: 'Assessment',  color: '#6a1b9a' },
+  insights:    { label: 'Summaries',   color: '#2e7d32' },
+};
+const TASK_ORDER = ['translation', 'feedback', 'insights'];
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
-interface Props {
-  isOpen:  boolean;
-  onClose: () => void;
-}
+interface Props { isOpen: boolean; onClose: () => void; }
 
 export default function CostsDrawer({ isOpen, onClose }: Props) {
-  const { data: rows, isLoading } = useQuery({
-    queryKey: ['token-usage'],
+  const { data: rows = [], isLoading } = useQuery({
+    queryKey: ['costs-all'],
     queryFn: async (): Promise<UsageRow[]> => {
-      const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
       const { data } = await supabase
         .from('token_usage')
-        .select('task, model, input_tokens, output_tokens, cost_usd, recorded_at')
-        .gte('recorded_at', since)
-        .order('recorded_at', { ascending: false });
+        .select('task, cost_usd, recorded_at')
+        .order('recorded_at', { ascending: true });
       return (data ?? []) as UsageRow[];
     },
     enabled: isOpen,
     staleTime: 5 * 60 * 1000,
   });
 
-  // Group by task
-  const byTask: Record<string, TaskSummary> = {};
-  for (const row of rows ?? []) {
-    if (!byTask[row.task]) {
-      byTask[row.task] = {
-        task: row.task, model: row.model,
-        totalInput: 0, totalOutput: 0, totalCost: 0, runs: 0,
-      };
-    }
-    byTask[row.task].totalInput  += row.input_tokens;
-    byTask[row.task].totalOutput += row.output_tokens;
-    byTask[row.task].totalCost   += row.cost_usd;
-    byTask[row.task].runs        += 1;
+  // ── Derived metrics ────────────────────────────────────────────────────────
+
+  const allTime    = rows.reduce((s, r) => s + r.cost_usd, 0);
+  const firstDate  = rows.length ? new Date(rows[0].recorded_at) : null;
+  const daysOfData = firstDate
+    ? Math.max(1, (Date.now() - firstDate.getTime()) / (1000 * 60 * 60 * 24))
+    : 1;
+
+  const dailyAvg   = allTime / daysOfData;
+  const weeklyEst  = dailyAvg * 7;
+  const monthlyEst = dailyAvg * 30;
+
+  // This calendar month
+  const now        = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  const thisMonth  = rows
+    .filter(r => r.recorded_at >= monthStart)
+    .reduce((s, r) => s + r.cost_usd, 0);
+  const daysIntoMonth = now.getDate();
+
+  // Last 30 days per task
+  const since30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const recentRows = rows.filter(r => r.recorded_at >= since30);
+  const recentTotal = recentRows.reduce((s, r) => s + r.cost_usd, 0);
+
+  const byTask: Record<string, { cost: number; runs: number }> = {};
+  for (const r of recentRows) {
+    if (!byTask[r.task]) byTask[r.task] = { cost: 0, runs: 0 };
+    byTask[r.task].cost += r.cost_usd;
+    byTask[r.task].runs += 1;
   }
 
-  const tasks = TASK_ORDER.map(t => byTask[t]).filter(Boolean);
-  const grandTotal = tasks.reduce((s, t) => s + t.totalCost, 0);
-  const grandTokens = tasks.reduce((s, t) => s + t.totalInput + t.totalOutput, 0);
+  const daysLabel = daysOfData < 2
+    ? '1 day'
+    : daysOfData < 30
+    ? `${Math.floor(daysOfData)} days`
+    : `${Math.round(daysOfData / 30)} month${Math.round(daysOfData / 30) !== 1 ? 's' : ''}`;
 
   return (
     <Drawer isOpen={isOpen} placement="bottom" onClose={onClose}>
       <DrawerOverlay />
       <DrawerContent
-        maxH="80vh"
+        maxH="88dvh"
         style={{ maxWidth: '600px', marginLeft: 'auto', marginRight: 'auto' }}
-        borderTopRadius="lg"
+        borderTopRadius="xl"
         bg="brand.paper"
       >
-        <DrawerCloseButton color="brand.muted" mt={1} />
+        <DrawerCloseButton color="brand.muted" top={3} right={4} />
 
-        <DrawerHeader borderBottom="1px solid" borderColor="brand.rule" pb={3} pt={4}>
+        <DrawerHeader px={4} pt={4} pb={3} borderBottom="1px solid" borderColor="brand.rule">
           <Text
-            fontSize="md" fontWeight="700" color="brand.ink" lineHeight="1.2"
+            fontSize="md" fontWeight="700" color="brand.ink" pr={8}
             fontFamily="'Noto Serif SC', 'Georgia', serif"
           >
-            Costs
+            AI Costs
           </Text>
           <Text fontSize="xs" color="brand.muted" fontWeight="400" mt={0.5}>
-            AI token usage over the past 30 days.
+            Estimates based on {daysLabel} of history
           </Text>
         </DrawerHeader>
 
-        <DrawerBody py={4} overflowY="auto">
+        <DrawerBody px={4} py={4} overflowY="auto">
           {isLoading ? (
             <Center py={10}><Spinner color="brand.red" size="md" /></Center>
-          ) : !tasks.length ? (
+          ) : !rows.length ? (
             <Center py={10}>
               <VStack spacing={2}>
                 <Text fontSize="2xl">📊</Text>
                 <Text fontSize="sm" color="brand.ink" fontWeight="600">No data yet</Text>
-                <Text fontSize="xs" color="brand.muted" textAlign="center" maxW="240px">
-                  Usage will appear after the next job run.
+                <Text fontSize="xs" color="brand.muted" textAlign="center" maxW="220px">
+                  Costs appear after the next job run.
                 </Text>
               </VStack>
             </Center>
           ) : (
-            <VStack spacing={0} align="stretch">
+            <VStack spacing={4} align="stretch">
 
-              {/* ── Per-task rows ───────────────────────────────────────── */}
-              {tasks.map((t, i) => {
-                const meta  = TASK_META[t.task] ?? { label: t.task, description: '', icon: '⚙️' };
-                const total = t.totalInput + t.totalOutput;
-                const avgCost = t.runs > 0 ? t.totalCost / t.runs : 0;
-                return (
-                  <Box key={t.task}>
-                    {i > 0 && <Divider borderColor="brand.rule" />}
-                    <Box py={3}>
-                      <HStack justify="space-between" align="flex-start" mb={1.5}>
-                        <HStack spacing={2}>
-                          <Text fontSize="sm">{meta.icon}</Text>
-                          <Box>
-                            <Text fontSize="sm" fontWeight="700" color="brand.ink">
-                              {meta.label}
-                            </Text>
-                            <Text fontSize="2xs" color="brand.muted">{meta.description}</Text>
-                          </Box>
-                        </HStack>
-                        <Text fontSize="sm" fontWeight="700" color="brand.ink">
-                          {fmtCost(t.totalCost)}
-                        </Text>
-                      </HStack>
-
-                      <HStack spacing={4} pl="26px">
-                        <Box>
-                          <Text fontSize="2xs" color="brand.muted" textTransform="uppercase" letterSpacing="wider">
-                            Tokens
-                          </Text>
-                          <Text fontSize="xs" color="brand.ink">{fmtTokens(total)}</Text>
-                        </Box>
-                        <Box>
-                          <Text fontSize="2xs" color="brand.muted" textTransform="uppercase" letterSpacing="wider">
-                            Avg / run
-                          </Text>
-                          <Text fontSize="xs" color="brand.ink">{fmtCost(avgCost)}</Text>
-                        </Box>
-                        <Box>
-                          <Text fontSize="2xs" color="brand.muted" textTransform="uppercase" letterSpacing="wider">
-                            Runs
-                          </Text>
-                          <Text fontSize="xs" color="brand.ink">{t.runs}</Text>
-                        </Box>
-                      </HStack>
-                    </Box>
-                  </Box>
-                );
-              })}
-
-              <Divider borderColor="brand.rule" />
-
-              {/* ── Grand total ─────────────────────────────────────────── */}
-              <Box py={3}>
-                <HStack justify="space-between">
-                  <Text fontSize="xs" fontWeight="700" color="brand.ink">Total (30 days)</Text>
-                  <Text fontSize="xs" fontWeight="700" color="brand.red">{fmtCost(grandTotal)}</Text>
-                </HStack>
-                <Text fontSize="2xs" color="brand.muted" mt={0.5}>
-                  {fmtTokens(grandTokens)} tokens across all jobs
+              {/* ── Projection card ───────────────────────────────────── */}
+              <Box
+                bg="brand.card" border="1px solid" borderColor="brand.rule"
+                borderRadius="md" px={4} py={3}
+              >
+                <Text
+                  fontSize="2xs" fontWeight="700" color="brand.muted"
+                  textTransform="uppercase" letterSpacing="wider" mb={3}
+                >
+                  Estimated spend
                 </Text>
+
+                {/* Monthly — hero number */}
+                <HStack justify="space-between" align="baseline" mb={3}>
+                  <Text fontSize="sm" color="brand.muted">Per month</Text>
+                  <Text fontSize="2xl" fontWeight="700" color="brand.red" lineHeight="1">
+                    {fmtCostFull(monthlyEst)}
+                  </Text>
+                </HStack>
+
+                <Divider borderColor="brand.rule" mb={3} />
+
+                <VStack spacing={2} align="stretch">
+                  <HStack justify="space-between">
+                    <Text fontSize="xs" color="brand.muted">Per week</Text>
+                    <Text fontSize="xs" fontWeight="600" color="brand.ink">{fmtCostFull(weeklyEst)}</Text>
+                  </HStack>
+                  <HStack justify="space-between">
+                    <Text fontSize="xs" color="brand.muted">Per day</Text>
+                    <Text fontSize="xs" fontWeight="600" color="brand.ink">{fmtCost(dailyAvg)}</Text>
+                  </HStack>
+                  <HStack justify="space-between">
+                    <Text fontSize="xs" color="brand.muted">Per hour</Text>
+                    <Text fontSize="xs" fontWeight="600" color="brand.ink">{fmtCost(dailyAvg / 24)}</Text>
+                  </HStack>
+                </VStack>
               </Box>
 
-              <Divider borderColor="brand.rule" />
-              <Text fontSize="2xs" color="brand.muted" textAlign="center" pb={2} pt={1} lineHeight="1.6">
-                Prices per Anthropic's published rates · updated on each job run
+              {/* ── Actuals ───────────────────────────────────────────── */}
+              <Box
+                bg="brand.card" border="1px solid" borderColor="brand.rule"
+                borderRadius="md" px={4} py={3}
+              >
+                <Text
+                  fontSize="2xs" fontWeight="700" color="brand.muted"
+                  textTransform="uppercase" letterSpacing="wider" mb={3}
+                >
+                  Actuals
+                </Text>
+                <VStack spacing={2} align="stretch">
+                  <HStack justify="space-between">
+                    <Box>
+                      <Text fontSize="xs" color="brand.muted" display="inline">
+                        {now.toLocaleString('en-MY', { month: 'long' })} so far
+                      </Text>
+                      <Text fontSize="2xs" color="brand.muted" display="inline"> · {daysIntoMonth}d in</Text>
+                    </Box>
+                    <Text fontSize="xs" fontWeight="600" color="brand.ink">{fmtCostFull(thisMonth)}</Text>
+                  </HStack>
+                  <HStack justify="space-between">
+                    <Text fontSize="xs" color="brand.muted">All time</Text>
+                    <Text fontSize="xs" fontWeight="600" color="brand.ink">{fmtCostFull(allTime)}</Text>
+                  </HStack>
+                </VStack>
+              </Box>
+
+              {/* ── By task ───────────────────────────────────────────── */}
+              {TASK_ORDER.some(t => byTask[t]) && (
+                <Box
+                  bg="brand.card" border="1px solid" borderColor="brand.rule"
+                  borderRadius="md" px={4} py={3}
+                >
+                  <Text
+                    fontSize="2xs" fontWeight="700" color="brand.muted"
+                    textTransform="uppercase" letterSpacing="wider" mb={3}
+                  >
+                    By task · last 30 days
+                  </Text>
+                  <VStack spacing={3} align="stretch">
+                    {TASK_ORDER.filter(t => byTask[t]).map((t, i) => {
+                      const meta  = TASK_META[t] ?? { label: t, color: 'brand.muted' };
+                      const entry = byTask[t];
+                      const pct   = recentTotal > 0 ? (entry.cost / recentTotal) * 100 : 0;
+                      return (
+                        <Box key={t}>
+                          {i > 0 && <Divider borderColor="brand.rule" mb={3} />}
+                          <HStack justify="space-between" mb={1.5}>
+                            <Text fontSize="xs" fontWeight="600" color={meta.color}>{meta.label}</Text>
+                            <Text fontSize="xs" fontWeight="600" color="brand.ink">{fmtCostFull(entry.cost)}</Text>
+                          </HStack>
+                          <Box h="3px" bg="brand.rule" borderRadius="full" overflow="hidden" mb={1.5}>
+                            <Box h="100%" w={`${pct}%`} bg={meta.color} borderRadius="full" transition="width 0.4s ease" />
+                          </Box>
+                          <Text fontSize="2xs" color="brand.muted">
+                            {entry.runs} runs · avg {fmtCost(entry.cost / entry.runs)} / run · {Math.round(pct)}% of spend
+                          </Text>
+                        </Box>
+                      );
+                    })}
+                  </VStack>
+                </Box>
+              )}
+
+              <Text fontSize="2xs" color="brand.muted" textAlign="center" lineHeight="1.6">
+                Prices snapshotted at each job run · USD
               </Text>
 
             </VStack>

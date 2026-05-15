@@ -42,11 +42,11 @@ def _topics_json(topics: list[dict]) -> str:
     return json.dumps({"topics": topics}, ensure_ascii=False)
 
 def _translations_json(topics: list[dict]) -> str:
-    """Build a pass-3 response: only idx + title_zh + summary_zh."""
-    return json.dumps({"translations": [
+    """Build a pass-3 response: JSON array of {idx, title_zh, summary_zh}."""
+    return json.dumps([
         {"idx": i, "title_zh": t.get("title_zh", ""), "summary_zh": t.get("summary_zh", "")}
         for i, t in enumerate(topics)
-    ]}, ensure_ascii=False)
+    ], ensure_ascii=False)
 
 
 # ── Constants ─────────────────────────────────────────────────────────────────
@@ -102,10 +102,12 @@ class TestChineseTranslationPrompt:
             "Prompt must explicitly forbid markdown fences."
         )
 
-    def test_do_not_modify_other_fields(self):
+    def test_output_only_translations(self):
         prompt = self._prompt()
-        assert "other fields" in prompt.lower() or "do not translate" in prompt.lower(), (
-            "Prompt must instruct the model not to modify fields other than title/summary."
+        # New design: pass-3 returns ONLY translations (not the full payload),
+        # so the prompt should describe exactly three output keys
+        assert "title_zh" in prompt and "summary_zh" in prompt and "idx" in prompt, (
+            "Prompt must name the three output keys: idx, title_zh, summary_zh."
         )
 
     def test_self_check_step(self):

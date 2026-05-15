@@ -42,7 +42,7 @@ claude   = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=120.0)
 
 SUMMARY_MODEL     = "claude-sonnet-4-6"
 LOOKBACK_DAYS     = 14
-MIN_NEW_HEADLINES = 0    # TEMP: force run to verify pass-3 fix (restore to 60)
+MIN_NEW_HEADLINES = 60   # skip regeneration if fewer new headlines since last run
 
 THEMES = ["Politics", "Economy", "Society", "Security", "Technology", "Environment"]
 
@@ -130,10 +130,12 @@ SUMMARY_SYSTEM_PROMPT = (
 CHINESE_TRANSLATION_SYSTEM_PROMPT = (
     "You are a news translator. Translate English news titles and summaries into Simplified Chinese.\n\n"
 
-    "You will receive a JSON array of objects, each with an 'idx', 'title', and 'summary' field.\n"
-    "For each item, return ONLY the two translations — do not repeat any other fields.\n\n"
+    "You will receive a numbered list of items in this format:\n"
+    "  IDX: <integer>\n"
+    "  TITLE: <English title>\n"
+    "  SUMMARY: <English summary>\n\n"
 
-    "Output schema (one object per input item, same order):\n"
+    "For each item output one JSON object with exactly three keys:\n"
     "  {\"idx\": <same integer>, \"title_zh\": \"<Simplified Chinese title>\", "
     "\"summary_zh\": \"<Simplified Chinese summary>\"}\n\n"
 
@@ -145,8 +147,8 @@ CHINESE_TRANSLATION_SYSTEM_PROMPT = (
     "    use the Chinese equivalent (预计, 将, 计划) — do not convert future events to past tense\n\n"
 
     "Self-check: confirm every item has idx, title_zh, and summary_zh before returning.\n\n"
-    "Return: {\"translations\": [...]}\n"
-    "Return ONLY the JSON object. No preamble, no explanation, no markdown fences.\n"
+    "Return: a JSON array [...] containing one object per input item, in order.\n"
+    "Return ONLY the JSON array. No preamble, no explanation, no markdown fences.\n"
 )
 
 FACT_CHECK_SYSTEM_PROMPT = (
@@ -253,13 +255,16 @@ def _call_summary(content: str) -> tuple[dict, object]:
         print("[summary] pass-2: all topics verified", flush=True)
 
     # ── Pass 3: Chinese translation ───────────────────────────────────────────
-    # Send only idx + title + summary — no large fields — so output stays small.
-    slim_input = json.dumps({
-        "translations": [
-            {"idx": i, "title": t["title"], "summary": t["summary"]}
-            for i, t in enumerate(corrected.get("topics", []))
-        ]
-    }, ensure_ascii=False)
+    # Send plain-text numbered list (not JSON) to avoid input/output format confusion.
+    topics_list = corrected.get("topics", [])
+    lines = []
+    for i, t in enumerate(topics_list):
+        lines.append(f"IDX: {i}")
+        lines.append(f"TITLE: {t['title']}")
+        lines.append(f"SUMMARY: {t['summary']}")
+        lines.append("")
+    slim_input = "\n".join(lines).strip()
+
     msg3 = claude.messages.create(
         model=SUMMARY_MODEL,
         max_tokens=2000,
@@ -268,19 +273,19 @@ def _call_summary(content: str) -> tuple[dict, object]:
     )
     try:
         raw3 = msg3.content[0].text if msg3.content else ""
-        extracted3 = _extract_json_object(raw3)
-        if not extracted3:
-            raise ValueError(f"no JSON object found in pass-3 response: {raw3[:200]!r}")
-        parsed3 = json.loads(extracted3)
-        zh_list = parsed3.get("translations", [])
+        # Model returns a JSON array [...]; extract it
+        first = raw3.find("[")
+        last  = raw3.rfind("]")
+        if first == -1 or last == -1 or last <= first:
+            raise ValueError(f"no JSON array in pass-3 response: {raw3[:200]!r}")
+        zh_list = json.loads(raw3[first:last + 1])
         # Merge title_zh / summary_zh back into the corrected payload by idx
-        topics = corrected.get("topics", [])
         for zh in zh_list:
             idx = zh.get("idx")
-            if isinstance(idx, int) and 0 <= idx < len(topics):
-                topics[idx]["title_zh"]   = zh.get("title_zh", "")
-                topics[idx]["summary_zh"] = zh.get("summary_zh", "")
-        translated = {"topics": topics}
+            if isinstance(idx, int) and 0 <= idx < len(topics_list):
+                topics_list[idx]["title_zh"]   = zh.get("title_zh", "")
+                topics_list[idx]["summary_zh"] = zh.get("summary_zh", "")
+        translated = {"topics": topics_list}
         print(f"[summary] pass-3: {len(zh_list)} topics translated to Chinese", flush=True)
     except Exception as e:
         print(f"[summary] pass-3 FAILED (falling back to pass-2 result): {e}", flush=True)

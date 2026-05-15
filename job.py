@@ -31,7 +31,7 @@ claude   = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=120.0)  # prev
 
 CLAUDE_BATCH_SIZE  = 50          # translation batch size
 ASSESS_BATCH_SIZE  = 20          # assess batch — smaller; Sonnet drops/duplicates items at higher counts
-TRANSLATE_MODEL    = "claude-haiku-4-5-20251001"
+TRANSLATE_MODEL    = "claude-sonnet-4-6"
 ASSESS_MODEL       = "claude-sonnet-4-6"
 DISTILL_MODEL      = "claude-sonnet-4-6"
 ASSESS_PASS_SCORE  = 3           # score >= 3 passes, < 3 triggers retry
@@ -460,7 +460,7 @@ def _translate_batch(source: str, rows: list[dict], prompt: str, classify: bool 
     for i in range(0, len(rows), CLAUDE_BATCH_SIZE):
         batch = rows[i:i + CLAUDE_BATCH_SIZE]
         numbered = "\n".join(f"{j+1}. {r['title_zh']}" for j, r in enumerate(batch))
-        results = _call_claude(TRANSLATE_MODEL, prompt, f"Translate these headlines:\n{numbered}")
+        results = _call_claude(TRANSLATE_MODEL, prompt, f"Translate these headlines:\n{numbered}", use_prefill=False)
         if len(results) != len(batch):
             print(
                 f"  [{source}] WARNING: translate returned {len(results)} for {len(batch)} input items",

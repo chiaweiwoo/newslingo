@@ -103,18 +103,16 @@ class TestPrefillInvariant:
             "claude-sonnet-4-6 returns HTTP 400 if conversation ends with assistant turn."
         )
 
-    def test_translate_model_uses_prefill_by_default(self):
-        """Translation (Haiku) uses prefill — the default use_prefill=True must remain."""
+    def test_translate_model_uses_no_prefill(self):
+        """Translation uses Sonnet — use_prefill=False is required (Sonnet returns HTTP 400 on prefill)."""
         src = read_source("job.py")
-        # _translate_batch calls _call_claude without use_prefill arg → default True
-        # Verify _translate_batch does NOT explicitly pass use_prefill=False
-        import re
         match = re.search(r'def _translate_batch\(.+?(?=\ndef )', src, re.DOTALL)
         assert match, "_translate_batch not found"
         func_body = match.group(0)
-        assert "use_prefill=False" not in func_body, (
-            "_translate_batch must not pass use_prefill=False — "
-            "Haiku supports prefill and benefits from it for reliable JSON output."
+        assert "use_prefill=False" in func_body, (
+            "_translate_batch must pass use_prefill=False — "
+            "TRANSLATE_MODEL is now claude-sonnet-4-6, which returns HTTP 400 if the "
+            "conversation ends with an assistant turn."
         )
 
 

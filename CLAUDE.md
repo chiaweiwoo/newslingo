@@ -78,16 +78,14 @@ Tie-breaking: bilateral Malaysia-Singapore → `Malaysia`; SEA regional → `Int
 `#Shorts` (case-insensitive). Shorts are filtered out in `scrape()` before rows are built.
 They have no news value and would pollute the feed.
 
-### 5. Assistant prefill — model-specific
+### 5. Assistant prefill — disabled for all calls
 
-`_call_claude(use_prefill=True)` — appends `{"role": "assistant", "content": "["}` to
-force JSON array output. **Haiku only.** Use for translation calls.
+All Claude calls use `use_prefill=False`. Every model in use is `claude-sonnet-4-6`,
+which returns HTTP 400 if the conversation ends with an assistant turn.
 
-`_call_claude(use_prefill=False)` — **required for Sonnet 4.6+**, which returns HTTP 400
-on assistant-turn endings. Use for assessment and distillation calls.
-
-- **Never** change `translate_zaobao` / `translate_astro` to `use_prefill=False`
+- **Never** add `use_prefill=True` to any call — it will break in production
 - **Never** change `assess_translations` / `_distill_rules` to `use_prefill=True`
+- JSON output reliability is enforced through strict system prompt instructions instead
 
 ### 6. Defensive batch iteration — never iterate results directly
 
@@ -167,7 +165,7 @@ GitHub Actions (cron: daily 09:00 SGT)
 
 | Task | Model | Notes |
 |---|---|---|
-| Translation | `claude-haiku-4-5-20251001` | Fast, cheap — high volume |
+| Translation | `claude-sonnet-4-6` | All sources — better entity disambiguation |
 | Assessment | `claude-sonnet-4-6` | Structured output; runs every 3h |
 | Distillation | `claude-sonnet-4-6` | Rule extraction from failures |
 | Inside AI digest | `claude-sonnet-4-6` | Daily; structured summarisation |

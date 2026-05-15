@@ -151,7 +151,7 @@ class TestTranslateBatch:
         """Zaobao: category set by URL must survive translation (classify=False)."""
         job.claude = MagicMock()
         job.claude.messages.create.return_value = _make_response(
-            '{"title_en": "Title 0"}, {"title_en": "Title 1"}, {"title_en": "Title 2"}]'
+            '[{"title_en": "Title 0"}, {"title_en": "Title 1"}, {"title_en": "Title 2"}]'
         )
         rows = self._rows(3)
         result = job._translate_batch("zaobao", rows, "prompt", classify=False)
@@ -165,7 +165,7 @@ class TestTranslateBatch:
         """Astro: category must be filled by the LLM result (classify=True)."""
         job.claude = MagicMock()
         job.claude.messages.create.return_value = _make_response(
-            '{"title_en": "Local news", "category": "Malaysia"}, '
+            '[{"title_en": "Local news", "category": "Malaysia"}, '
             '{"title_en": "World event", "category": "International"}]'
         )
         rows = self._astro_rows(2)
@@ -178,7 +178,7 @@ class TestTranslateBatch:
         job.claude = MagicMock()
         # Only 1 result for 3 inputs
         job.claude.messages.create.return_value = _make_response(
-            '{"title_en": "Only one result"}]'
+            '[{"title_en": "Only one result"}]'
         )
         rows = self._rows(3)
         # Must not raise — missing items keep their original title_zh as title_en

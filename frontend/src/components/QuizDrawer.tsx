@@ -371,7 +371,7 @@ export default function QuizDrawer({ isOpen, onClose }: Props) {
                       color="brand.ink"
                       _placeholder={{ color: 'brand.muted' }}
                       _focus={{ borderColor: 'brand.red', boxShadow: 'none' }}
-                      fontSize="sm"
+                      fontSize="16px"
                       fontFamily="inherit"
                       mb={2}
                     />

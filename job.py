@@ -11,8 +11,8 @@ from datetime import datetime
 
 import anthropic
 from dotenv import load_dotenv
-from langfuse import Langfuse
-from langfuse.decorators import langfuse_context, observe
+from langfuse import get_client as _langfuse_client
+from langfuse import observe
 
 from scrapers import astro as astro_scraper
 from scrapers import zaobao as zaobao_scraper
@@ -421,7 +421,7 @@ def _call_claude(model: str, system: str, content: str, use_prefill: bool = True
             system=system,
             messages=messages,
         )
-        langfuse_context.update_current_observation(
+        _langfuse_client().update_current_generation(
             model=model,
             usage={"input": msg.usage.input_tokens, "output": msg.usage.output_tokens},
         )
@@ -784,4 +784,4 @@ def _main() -> None:
 
 if __name__ == "__main__":
     _main()
-    Langfuse().flush()  # ensure all traces are sent before process exits
+    _langfuse_client().flush()  # ensure all traces are sent before process exits

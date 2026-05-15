@@ -25,8 +25,8 @@ from datetime import datetime, timedelta, timezone
 
 import anthropic
 from dotenv import load_dotenv
-from langfuse import Langfuse
-from langfuse.decorators import langfuse_context, observe
+from langfuse import get_client as _langfuse_client
+from langfuse import observe
 
 from supabase import create_client
 
@@ -307,7 +307,7 @@ def _call_summary(content: str) -> tuple[dict, object]:
         output_tokens = (msg1.usage.output_tokens + msg2.usage.output_tokens
                          + msg3.usage.output_tokens),
     )
-    langfuse_context.update_current_observation(
+    _langfuse_client().update_current_generation(
         model=SUMMARY_MODEL,
         usage={"input": combined.input_tokens, "output": combined.output_tokens},
     )
@@ -432,4 +432,4 @@ def _main() -> None:
 
 if __name__ == "__main__":
     _main()
-    Langfuse().flush()  # ensure all traces are sent before process exits
+    _langfuse_client().flush()  # ensure all traces are sent before process exits

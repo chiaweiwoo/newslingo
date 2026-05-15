@@ -13,8 +13,8 @@ NewsLingo aggregates bilingual (Chinese + English) news from two sources:
 - **联合早报 (Zaobao)** — Singapore newspaper, scraped via monthly sitemaps
 - **Astro 本地圈** — Malaysian YouTube channel, fetched via YouTube Data API v3
 
-News is translated by Claude Haiku, quality-assessed by Claude Sonnet, and stored in
-Supabase. Three GitHub Actions jobs run the pipeline.
+All AI tasks use `claude-sonnet-4-6` — translation, assessment, distillation, digest, and
+weekly summary. Headlines are stored in Supabase. Three GitHub Actions jobs run the pipeline.
 
 ---
 
@@ -106,9 +106,9 @@ for j, result in enumerate(results):
 ```
 GitHub Actions (cron: every 3h)
   └── job.py
-       ├── scrapers/zaobao.py     → scrape sitemap  → rows with category from URL
-       ├── scrapers/astro.py      → YouTube API     → rows with category=None
-       ├── _translate_batch()     → Claude Haiku    → fills title_en (+ category for Astro)
+       ├── scrapers/zaobao.py     → scrape sitemap  → rows (singapore/world: category from URL; sea: category=None)
+       ├── scrapers/astro.py      → YouTube API     → rows with category=None (Shorts excluded)
+       ├── _translate_batch()     → Claude Sonnet   → fills title_en (+ category for Astro and Zaobao /sea)
        ├── assess_translations()  → Claude Sonnet   → scores 1–5, retry if <3
        ├── _distill_rules()       → Claude Sonnet   → improves prompt_rules each run
        ├── upsert_rows()          → Supabase        → headlines table
@@ -155,7 +155,7 @@ GitHub Actions (cron: daily 09:00 SGT)
 | `weekly_summary` | YES | This Week topics; rotated by weekly_summary.py |
 | `job_runs` | NO | Audit log — preserve |
 | `visits` | NO | Frontend analytics — preserve |
-| `token_usage` | NO | AI cost per task per run; used by Costs drawer |
+| `token_usage` | NO | AI cost per task per run; used by Costs drawer. Columns: `cost_usd`, `price_input_per_1m`, `price_output_per_1m` (rate snapshot at insert time) |
 
 `token_usage.task` values: `translation`, `feedback`, `insights`
 
@@ -215,14 +215,19 @@ semantic tokens that flip between light and dark. Always use tokens — never ha
 ## Common Pitfalls
 
 - **"Expecting value: line 1 column 1"** — Claude returned prose instead of JSON.
-  Check that `messages` in `claude.messages.create()` ends with
-  `{"role": "assistant", "content": "["}` for Haiku translation calls.
+  All calls use `use_prefill=False` — JSON reliability comes from strict system prompt
+  instructions. Check the system prompt ends with a "Return ONLY a JSON array" instruction
+  and includes a schema example. Never add `use_prefill=True`; Sonnet returns HTTP 400.
 
 - **IndexError: list index out of range** — results has more items than batch.
   Always iterate `enumerate(batch)` and guard with `j < len(results)`.
 
-- **All Zaobao rows `category=Singapore`** — sitemap regex only matching one section.
-  Verify regex includes `(?:singapore|world)`.
+- **All Zaobao rows same category** — sitemap regex only matching one section.
+  Verify regex includes `(?:singapore|world|sea)`.
+
+- **Zaobao /sea rows have category=None after translation** — sea rows must go through
+  `_translate_batch(..., classify=True)` with `ZAOBAO_SEA_SYSTEM_PROMPT`. Check that
+  `translate_zaobao()` is correctly splitting by `r.get("category")` being None.
 
 - **Actions running stale code** — `workflow_dispatch` queued before a push runs the
   old version. The startup banner confirms the running build.
@@ -239,11 +244,12 @@ uv run pytest tests/test_invariants.py
 
 | File | What it covers |
 |---|---|
-| `test_invariants.py` | classify=False on Zaobao, prefill rules, regex scope |
+| `test_invariants.py` | classify routing (url vs sea), no-prefill invariant, regex scope, Shorts exclusion, sea prompt has classification |
 | `test_call_claude.py` | `_call_claude`, `_extract_json_array`, `_translate_batch`, `_validate_zaobao_categories` |
-| `test_zaobao_scraper.py` | URL→category, sitemap regex, out-of-scope exclusion |
+| `test_zaobao_scraper.py` | URL→category (incl. sea→None), sitemap regex (singapore/world/sea), china excluded |
 | `test_astro_scraper.py` | Row schema, title cleaning, playlist ID derivation |
 | `test_digest.py` | `_extract_json_object`, model invariants, `_build_content` grouping |
+| `test_pricing.py` | `get_model_rates()` shape and fallback, `compute_cost_usd` arithmetic, token_usage inserts carry price snapshot columns, schema.sql has price columns |
 
 CI runs two jobs in parallel on every push: `test` (ruff + pytest) and `build-frontend`
 (catches TS/JSX errors before Vercel).

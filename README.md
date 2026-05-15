@@ -31,7 +31,7 @@ A lightweight Python backend handles all scraping and AI work; the frontend is a
 | Layer | Technology |
 |---|---|
 | Frontend | React + TypeScript, Chakra UI, Vite — deployed on Vercel |
-| Backend | Python, Claude Haiku (translate), Claude Sonnet (assess + improve + summarise) |
+| Backend | Python, Claude Sonnet (translate, assess, improve, summarise) |
 | Database | Supabase (Postgres) |
 | Jobs | GitHub Actions — aggregation every 3h, digest + This Week summary daily |
 
@@ -45,7 +45,7 @@ flowchart LR
     end
 
     subgraph agg["Aggregate · every 3 hours"]
-        TR["Translate\nClaude Haiku"]
+        TR["Translate\nClaude Sonnet"]
         AS["Assess\nClaude Sonnet"]
         DR["Distil rules\nClaude Sonnet"]
         TR --> AS --> DR
@@ -76,7 +76,7 @@ All external dependencies are either free-tier or pay-per-use with negligible co
 
 | API | Purpose | Cost |
 |---|---|---|
-| [Anthropic Claude](https://anthropic.com) | Translation (Haiku), assessment + distillation + digest (Sonnet) | Pay per token |
+| [Anthropic Claude](https://anthropic.com) | Translation, assessment, distillation, digest — all Sonnet | Pay per token |
 | [YouTube Data API v3](https://developers.google.com/youtube/v3) | Fetch Astro 本地圈 videos | Free quota |
 | [Supabase](https://supabase.com) | Database, REST API | Free tier |
 | [ipapi.co](https://ipapi.co) | Visitor geolocation for traffic analytics | Free tier |

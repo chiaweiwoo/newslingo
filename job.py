@@ -80,7 +80,7 @@ def _record_token_usage() -> None:
 ASTRO_SYSTEM_PROMPT = (
     "You are an expert Malaysian news translator and classifier. For each headline:\n"
     "1. Translate from Chinese to Malaysian English\n"
-    "2. Classify as 'Malaysia' (local Malaysian news) or 'International' (foreign/world news)\n\n"
+    "2. Classify as 'Malaysia', 'Singapore', or 'International'\n\n"
 
     "CLASSIFICATION RULES (apply in order — stop at first match):\n"
     "1. 'Malaysia' — news about Malaysian politics, people, places, companies, courts, or events\n"
@@ -137,6 +137,9 @@ ASTRO_SYSTEM_PROMPT = (
 
     "STYLE: Malaysian English, concise headlines, keep proper nouns.\n\n"
 
+    "FAITHFULNESS: Translate the headline as-is. Do not add context, explain abbreviations "
+    "inline, or embellish with facts not present in the Chinese source.\n\n"
+
     "Return ONLY a JSON array, one object per input line, same order.\n"
     "Each object must have exactly two keys: \"title_en\" and \"category\".\n"
     "If a headline cannot be reliably translated, use {\"title_en\": null, \"category\": null} "
@@ -188,6 +191,12 @@ ZAOBAO_SYSTEM_PROMPT = (
 
     "STYLE: Singapore English, concise headlines, keep proper nouns.\n\n"
 
+    "FAITHFULNESS: Translate the headline as-is. Do not add context, explain abbreviations "
+    "inline, or embellish with facts not present in the Chinese source.\n"
+    "PROPER NOUNS: For non-Singaporean proper nouns (foreign leaders, international organisations, "
+    "overseas place names) that you cannot confidently identify, keep the Chinese romanisation "
+    "rather than guessing an English equivalent.\n\n"
+
     "Return ONLY a JSON array, one object per input line, same order.\n"
     "Each object must have exactly ONE key: \"title_en\".\n"
     "If a headline cannot be reliably translated, use {\"title_en\": null} rather than guessing.\n"
@@ -232,6 +241,13 @@ ZAOBAO_SEA_SYSTEM_PROMPT = (
 
     "STYLE: Singapore English, concise headlines, keep proper nouns.\n\n"
 
+    "FAITHFULNESS: Translate the headline as-is. Do not add context, explain abbreviations "
+    "inline, or embellish with facts not present in the Chinese source.\n"
+    "PROPER NOUNS: For non-Singapore/Malaysia proper nouns (foreign leaders, organisations, "
+    "place names outside the region) that you cannot confidently identify, keep the Chinese "
+    "romanisation rather than guessing an English equivalent.\n"
+    "CLASSIFICATION TIE-BREAK: When genuinely unclear between two categories, prefer 'International'.\n\n"
+
     "Return ONLY a JSON array, one object per input line, same order.\n"
     "Each object must have exactly two keys: \"title_en\" and \"category\".\n"
     "If a headline cannot be reliably translated, use {\"title_en\": null, \"category\": null} "
@@ -248,9 +264,21 @@ ASSESS_SYSTEM_PROMPT = (
     "For each numbered pair (ZH: Chinese | EN: English), score the translation 1–5:\n"
     "  5 — perfect: accurate meaning, natural English, correct proper nouns\n"
     "  4 — good: minor style issues but fully accurate\n"
-    "  3 — acceptable: meaning intact, some awkwardness or minor omissions\n"
-    "  2 — poor: key facts or entities wrong/missing, broken grammar\n"
+    "  3 — acceptable: meaning intact, some awkwardness; minor style omissions only\n"
+    "  2 — poor: key facts or entities wrong/missing/dropped, broken grammar\n"
+    "       Note: omitting a named person, place, or organisation is always score 2 or lower.\n"
     "  1 — unacceptable: wrong meaning or completely unreadable\n\n"
+
+    "PROPER NOUN RULE — this is the most important rule:\n"
+    "Person names, place names, and organisation names must be verified against your "
+    "knowledge of current affairs. If a proper noun in the English translation does not "
+    "match what you know the Chinese refers to — or if you are not confident the entity "
+    "is correctly identified — score it 2 and provide the correct translation.\n"
+    "Do NOT give a passing score (3+) to a translation with a doubtful proper noun.\n"
+    "Examples of errors to catch:\n"
+    "- A Chinese abbreviated name (e.g. 高市) translated as a city when it refers to a person\n"
+    "- A foreign leader's name transliterated incorrectly\n"
+    "- An organisation rendered as a generic description instead of its official name\n\n"
 
     "For scores 1–2, you MUST also provide:\n"
     "- \"reason\": one-line explanation of what is wrong\n"
@@ -280,6 +308,10 @@ DISTILL_SYSTEM_PROMPT = (
     "If fewer than 3 failures are provided, return an empty array [] — "
     "do not fabricate patterns from insufficient data.\n\n"
 
+    "Before returning, verify each rule can be traced back to at least one failure in the input. "
+    "Remove any rule you cannot justify from the provided data.\n\n"
+
+    "Return rules in English only.\n"
     "Return ONLY a JSON array of rule strings:\n"
     "[\"rule 1\", \"rule 2\", ...]\n"
 )

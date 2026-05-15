@@ -104,6 +104,8 @@ SUMMARY_SYSTEM_PROMPT = (
     "  lesson  — 2-4 narrative bullets. No label prefixes like 'Short term:' or 'Long term:'.\n"
     "            Write natural sentences. Include a 'worth watching' point only when the outcome\n"
     "            is genuinely uncertain and observation is warranted.\n"
+    "            Each bullet must be specific to this week's events — no generic observations\n"
+    "            that could apply to any week.\n"
     "  region  — International | Malaysia | Singapore\n"
     "  theme   — Politics | Economy | Society | Security | Technology | Environment\n\n"
 
@@ -118,6 +120,8 @@ SUMMARY_SYSTEM_PROMPT = (
     "QUANTITY — aim for 8-10 strong stories. Missing something is acceptable; a weak story is not. "
     "Spread across regions and themes where stories genuinely qualify — do not force coverage.\n\n"
 
+    "Before returning, re-read each topic and verify: (1) every named entity is supported by "
+    "a provided headline, (2) tense matches the source, (3) single-source claims use 'reportedly'.\n\n"
     "Return ONLY the JSON object. No preamble, no explanation, no markdown fences.\n"
 )
 
@@ -153,6 +157,9 @@ FACT_CHECK_SYSTEM_PROMPT = (
     "    already present\n"
     "  • Not supported by any headline → remove the claim\n\n"
 
+    "Return the complete topic list — include unchanged topics verbatim, not just edited ones.\n"
+    "Before returning, do a final tense scan: check every topic for past-tense verbs where "
+    "the matching headline used future tense. This is the most common error to miss.\n\n"
     "Return the corrected list as: {\"topics\": [...]}\n"
     "Return ONLY the JSON object. No explanation.\n"
 )

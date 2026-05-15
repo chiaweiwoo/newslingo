@@ -23,10 +23,8 @@ import sys
 import types
 from datetime import datetime, timedelta, timezone
 
-import anthropic
 from dotenv import load_dotenv
-
-from pricing import compute_cost_usd, get_model_rates
+from langfuse.anthropic import anthropic
 from supabase import create_client
 
 sys.stdout.reconfigure(encoding="utf-8")
@@ -36,6 +34,7 @@ load_dotenv(override=True)
 SUPABASE_URL         = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 ANTHROPIC_API_KEY    = os.getenv("ANTHROPIC_API_KEY")
+os.environ.setdefault("LANGFUSE_HOST", os.getenv("LANGFUSE_BASE_URL", "https://cloud.langfuse.com"))
 
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 claude   = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=120.0)
@@ -401,7 +400,7 @@ def _main() -> None:
             return
 
         content = _build_content(headlines)
-        payload, usage = _call_summary(content)
+        payload, _usage = _call_summary(content)
         topic_count = len(payload.get("topics", []))
         print(f"[summary] final: {topic_count} topic clusters", flush=True)
 
@@ -415,22 +414,6 @@ def _main() -> None:
             "payload":    payload,
             "active":     True,
         }).execute()
-
-        # Record token usage (combined across both passes)
-        in_tok  = getattr(usage, "input_tokens", 0)
-        out_tok = getattr(usage, "output_tokens", 0)
-        rates   = get_model_rates(SUMMARY_MODEL)
-        cost    = compute_cost_usd(SUMMARY_MODEL, in_tok, out_tok)
-        supabase.table("token_usage").insert({
-            "task":                "insights",
-            "model":               SUMMARY_MODEL,
-            "input_tokens":        in_tok,
-            "output_tokens":       out_tok,
-            "cost_usd":            cost,
-            "price_input_per_1m":  rates["input"],
-            "price_output_per_1m": rates["output"],
-        }).execute()
-        print(f"[summary] in={in_tok} out={out_tok} cost=${cost:.4f}", flush=True)
 
         print("[summary] summary updated successfully", flush=True)
 

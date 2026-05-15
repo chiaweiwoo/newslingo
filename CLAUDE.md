@@ -13,8 +13,9 @@ NewsLingo aggregates bilingual (Chinese + English) news from two sources:
 - **联合早报 (Zaobao)** — Singapore newspaper, scraped via monthly sitemaps
 - **Astro 本地圈** — Malaysian YouTube channel, fetched via YouTube Data API v3
 
-All AI tasks use `claude-sonnet-4-6` — translation, assessment, distillation, digest, and
-weekly summary. Headlines are stored in Supabase. Three GitHub Actions jobs run the pipeline.
+All AI tasks use `claude-sonnet-4-6` — translation, assessment, distillation, and weekly summary.
+Headlines are stored in Supabase. Three GitHub Actions jobs run the pipeline.
+LLM observability (token counts, costs, latency) is handled by **Langfuse Cloud** (`langfuse.anthropic` SDK wrapper).
 
 ---
 
@@ -149,9 +150,7 @@ GitHub Actions (cron: daily 09:00 SGT)
 | `weekly_summary` | YES | Top Stories topics; rotated by weekly_summary.py |
 | `job_runs` | NO | Audit log — preserve |
 | `visits` | NO | Frontend analytics — preserve |
-| `token_usage` | NO | AI cost per task per run. Columns: `cost_usd`, `price_input_per_1m`, `price_output_per_1m` (rate snapshot at insert time). No frontend display currently. |
-
-`token_usage.task` values: `translation`, `feedback`, `insights`
+| `token_usage` | NO | Legacy — was written by custom pricing.py (now deleted). No longer written; Langfuse handles observability. Safe to ignore. |
 
 ---
 
@@ -274,7 +273,6 @@ uv run pytest tests/test_invariants.py
 | `test_zaobao_scraper.py` | URL→category (incl. sea→None), sitemap regex (singapore/world/sea), china excluded |
 | `test_astro_scraper.py` | Row schema, title cleaning, playlist ID derivation |
 | `test_weekly_summary.py` | LOOKBACK_DAYS/MIN_NEW_HEADLINES constants, Chinese prompt quality, three-pass `_call_summary` (title_zh/summary_zh populated, 3 Claude calls, token sums), `_extract_json_object`, model invariant, `_build_content` grouping |
-| `test_pricing.py` | `get_model_rates()` shape and fallback, `compute_cost_usd` arithmetic, token_usage inserts carry price snapshot columns, schema.sql has price columns |
 
 CI runs two jobs in parallel on every push: `test` (ruff + pytest) and `build-frontend`
 (catches TS/JSX errors before Vercel).

@@ -58,29 +58,40 @@ SUMMARY_SYSTEM_PROMPT = (
     "You will receive translated headlines from the past 7 days, tagged by region "
     "(International / Malaysia / Singapore).\n\n"
 
-    "Produce a JSON object with this exact structure:\n"
+    "SELECTION THINKING — internal process, do not emit these fields:\n"
+    "Before committing to any topic, mentally ask:\n"
+    "  • so_what: Why does this matter beyond the headline? Who specifically feels it — "
+    "workers, businesses, governments, consumers — and how does it change their situation?\n"
+    "  • lesson: What pattern, structural shift, or non-obvious dynamic does this story reveal? "
+    "Must be specific to this week's events — 'instability is bad' fails the bar.\n"
+    "Include a topic ONLY if you can answer both with specificity. If either answer is generic, "
+    "the story does not belong regardless of how prominent it seems.\n\n"
+
+    "SELECTION CRITERIA — include a story only if it passes:\n"
+    "  • Does it change what people pay, their safety, their legal rights, or their future options?\n"
+    "  • Does it represent a structural shift — political, economic, geopolitical — with compounding "
+    "consequences over months or years?\n"
+    "  • Does it carry a public health signal worth awareness?\n"
+    "Concrete examples:\n"
+    "  PASSES — New tariff on Malaysian palm oil exports: changes producer margins, ripples through "
+    "supply chains, affects livelihoods downstream.\n"
+    "  PASSES — Regional central bank raises rates: directly affects mortgages, business borrowing, "
+    "and currency — felt by ordinary people.\n"
+    "  FAILS — Minister attended ribbon-cutting with no signed outcome.\n"
+    "  FAILS — Country won a regional sports event.\n"
+    "  FAILS — Single accident or crime with no systemic pattern behind it.\n\n"
+
+    "OUTPUT FORMAT — produce a JSON object with this exact structure:\n"
     "{\n"
     '  "topics": [\n'
     "    {\n"
     '      "title":   "Short topic label (max 8 words)",\n'
-    '      "summary": "WHO did WHAT WHERE — one sentence, concrete names and places.",\n'
-    '      "so_what": "Why this matters — 2-3 sentences. Start with the general impact, '
-    'then narrow to specific groups affected.",\n'
-    '      "lesson":  ["narrative bullet", "narrative bullet"],\n'
+    '      "summary": "WHO did WHAT WHERE — one sentence, concrete names, max 25 words.",\n'
     '      "region":  "International" | "Malaysia" | "Singapore",\n'
     '      "theme":   "Politics" | "Economy" | "Society" | "Security" | "Technology" | "Environment"\n'
     "    }\n"
     "  ]\n"
     "}\n\n"
-
-    "SELECTION — include a story only if it passes the must-know test:\n"
-    "  • Does this change what people pay, their safety, their legal rights, or their future options?\n"
-    "  • Does it represent a structural shift — political, economic, geopolitical — with compounding "
-    "consequences over months or years?\n"
-    "  • Does it carry a public health signal worth awareness, even if the outcome is still uncertain "
-    "(think: early COVID-like pattern)?\n"
-    "Exclude: single accidents or crimes without a systemic pattern behind them; ceremonial events "
-    "with no signed outcome; local decisions with limited reach.\n\n"
 
     "FACTUAL DISCIPLINE — only state that an event occurred if a provided headline directly says it "
     "did. For high-stakes claims (meetings, visits, deaths, signed deals, financial figures): be "
@@ -88,28 +99,19 @@ SUMMARY_SYSTEM_PROMPT = (
     "do not assert it as fact.\n\n"
 
     "TENSE DISCIPLINE — match the tense of your source headlines exactly.\n"
-    "  • If headlines say 'will visit', 'plans to', 'is set to', 'expected to' → use future language: "
-    "'is set to visit', 'plans to meet'. Never convert a planned event into a completed one.\n"
-    "  • If headlines say 'visited', 'signed', 'announced', 'killed' → past tense is correct.\n"
-    "  • When in doubt, use present or future tense — it is safer to under-claim than to assert "
-    "something happened that has not.\n\n"
+    "  • 'will visit', 'plans to', 'is set to', 'expected to' → future: 'is set to visit', "
+    "'plans to meet'. Never convert a planned event into a completed one.\n"
+    "  • 'visited', 'signed', 'announced', 'killed' → past tense is correct.\n"
+    "  • When in doubt, use future tense — under-claiming is safer than over-claiming.\n\n"
 
-    "CONFIDENCE HEDGING — calibrate certainty to source coverage:\n"
+    "CONFIDENCE HEDGING:\n"
     "  • Claim confirmed by multiple independent headlines → state it directly\n"
-    "  • Specific claim (visit, meeting, deal, arrest, figure, death) appearing in only one "
-    "headline → prefix with 'reportedly' or 'according to reports'\n"
-    "  • Claim inferred or synthesised without any direct headline confirmation → do not state "
-    "it as fact; write around it or omit it entirely\n\n"
+    "  • Specific claim in only one headline → prefix with 'reportedly' or 'according to reports'\n"
+    "  • Claim inferred without any direct headline → omit entirely\n\n"
 
     "FIELD INSTRUCTIONS:\n"
     "  title   — noun phrase, max 8 words, no trailing punctuation\n"
-    "  summary — one sentence. Must answer WHO, WHAT, WHERE with concrete names. Max 25 words.\n"
-    "  so_what — 2-3 sentences. Lead with the broad impact, then narrow to who feels it most.\n"
-    "  lesson  — 2-4 narrative bullets. No label prefixes like 'Short term:' or 'Long term:'.\n"
-    "            Write natural sentences. Include a 'worth watching' point only when the outcome\n"
-    "            is genuinely uncertain and observation is warranted.\n"
-    "            Each bullet must be specific to this week's events — no generic observations\n"
-    "            that could apply to any week.\n"
+    "  summary — one sentence. WHO, WHAT, WHERE with concrete names. Max 25 words.\n"
     "  region  — International | Malaysia | Singapore\n"
     "  theme   — Politics | Economy | Society | Security | Technology | Environment\n\n"
 
@@ -121,11 +123,12 @@ SUMMARY_SYSTEM_PROMPT = (
     "  Technology:  AI, software, infrastructure, cybersecurity, science\n"
     "  Environment: climate, natural disasters, energy, conservation\n\n"
 
-    "QUANTITY — aim for 8-10 strong stories. Missing something is acceptable; a weak story is not. "
-    "Spread across regions and themes where stories genuinely qualify — do not force coverage.\n\n"
+    "QUANTITY — aim for 8-10 strong stories. If fewer than 8 pass the must-know test, "
+    "return fewer — never pad with weak stories. Do not force coverage across regions or themes.\n\n"
 
-    "Before returning, re-read each topic and verify: (1) every named entity is supported by "
-    "a provided headline, (2) tense matches the source, (3) single-source claims use 'reportedly'.\n\n"
+    "Before returning, verify each topic: (1) every named entity is supported by a provided "
+    "headline, (2) tense matches the source, (3) single-source claims use 'reportedly', "
+    "(4) you can articulate a specific so_what and lesson — if you cannot, remove the topic.\n\n"
     "Write all fields in English.\n"
     "Return ONLY the JSON object. No preamble, no explanation, no markdown fences.\n"
 )
@@ -146,13 +149,15 @@ CHINESE_TRANSLATION_SYSTEM_PROMPT = (
     "  • Use standard Simplified Chinese proper-noun equivalents where they exist\n"
     "    (e.g. Donald Trump → 唐纳德·特朗普, Singapore → 新加坡, Malaysia → 马来西亚)\n"
     "  • For proper nouns with no established Simplified Chinese equivalent, keep the English "
-    "term rather than inventing a transliteration\n"
-    "  • Translate faithfully — do not expand, explain, or add context not present in the English source\n"
+    "term inline — do not invent a transliteration\n"
+    "    (e.g. 'Nvidia's H200 chip' → '英伟达的 H200 芯片', keeping H200 in English)\n"
+    "  • Translate faithfully — do not expand, explain, or add context not in the English source\n"
     "  • Preserve journalistic tone — factual, concise, third-person\n"
-    "  • TENSE PRESERVATION — if the English uses future language (is set to, plans to, will),\n"
-    "    use the Chinese equivalent (预计, 将, 计划) — do not convert future events to past tense\n\n"
+    "  • TENSE PRESERVATION — future language in English (is set to, plans to, will) must use "
+    "the Chinese equivalent (预计, 将, 计划) — do not convert future events to past tense\n\n"
 
-    "Self-check: confirm every item has idx, title_zh, and summary_zh before returning.\n\n"
+    "Self-check: confirm every item in the output has idx, title_zh, and summary_zh. "
+    "If an item's English input is empty, return {\"idx\": N, \"title_zh\": \"\", \"summary_zh\": \"\"}.\n\n"
     "Return: a JSON array [...] containing one object per input item, in order.\n"
     "Return ONLY the JSON array. No preamble, no explanation, no markdown fences.\n"
 )
@@ -162,7 +167,8 @@ FACT_CHECK_SYSTEM_PROMPT = (
     "  1. HEADLINES — the source headlines used to generate the summary\n"
     "  2. TOPICS — the generated summary topics\n\n"
 
-    "For each topic, verify every specific factual claim against the provided headlines.\n"
+    "Each topic has four fields: title, summary, region, theme.\n"
+    "Verify every specific factual claim in title and summary against the provided headlines.\n"
     "A specific factual claim includes: named meetings or visits, deaths or injuries with counts, "
     "arrests, signed agreements, financial figures, military actions.\n\n"
 
@@ -172,29 +178,25 @@ FACT_CHECK_SYSTEM_PROMPT = (
     "    Example: 'Trump arrived in Beijing for talks' → 'Trump-Xi tensions escalated over trade'\n"
     "  • Topic whose core claim cannot be matched to any headline → remove the topic entirely\n"
     "  • Do not add new topics\n"
-    "  • Only update so_what or lesson if the factual correction makes them wrong\n\n"
+    "  • Only update summary if the factual correction makes it wrong; leave title/region/theme "
+    "unchanged unless the factual correction requires it\n\n"
 
-    "TENSE CHECK — this is the most common error; check every topic:\n"
-    "  • If a topic uses past tense (visited, met, traveled, signed, announced) but the matching\n"
-    "    headlines use future tense (will visit, plans to, is set to, expected to) → correct the\n"
-    "    tense to match the headlines. A planned event must never be written as a completed event.\n"
-    "  • Example: 'Trump traveled to Beijing for talks with Xi' when headlines say 'Trump set to\n"
-    "    visit Beijing' → correct to 'Trump is set to visit Beijing for talks with Xi Jinping'.\n\n"
+    "TENSE CHECK — most common error; check every topic:\n"
+    "  • Past tense in topic (visited, met, traveled, signed) but future tense in headlines "
+    "(will visit, plans to, is set to, expected to) → correct tense to match headlines.\n"
+    "  • Example: 'Trump traveled to Beijing' when headlines say 'Trump set to visit Beijing' "
+    "→ correct to 'Trump is set to visit Beijing for talks with Xi Jinping'.\n\n"
 
-    "HEDGING CHECK — verify confidence language:\n"
-    "  • For each specific claim (visit, meeting, deal, arrest, figure, death): count how many\n"
-    "    provided headlines independently support it. Note: two headlines reporting the same\n"
-    "    underlying wire story count as one independent source, not two.\n"
-    "  • Supported by multiple independent headlines → direct language is fine\n"
-    "  • Supported by only one headline → add 'reportedly' or 'according to reports' if not\n"
-    "    already present\n"
-    "  • Not supported by any headline → remove the claim\n\n"
+    "HEDGING CHECK:\n"
+    "  • Multiple independent headlines support the claim → direct language is fine\n"
+    "  • Only one headline → add 'reportedly' or 'according to reports' if not already present\n"
+    "  • No headline supports the claim → remove it\n\n"
 
-    "Return the complete topic list — include unchanged topics verbatim, not just edited ones.\n"
-    "If the TOPICS input is empty or malformed, return {\"topics\": []} rather than guessing.\n"
+    "Return the complete corrected topic list — include unchanged topics verbatim.\n"
+    "If TOPICS is empty or malformed, return {\"topics\": []}.\n"
     "Before returning, do a final tense scan: check every topic for past-tense verbs where "
     "the matching headline used future tense. This is the most common error to miss.\n\n"
-    "Return the corrected list as: {\"topics\": [...]}\n"
+    "Return: {\"topics\": [...]}\n"
     "Return ONLY the JSON object. No explanation.\n"
 )
 

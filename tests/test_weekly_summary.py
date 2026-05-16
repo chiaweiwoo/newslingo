@@ -126,8 +126,6 @@ class TestCallSummaryThreePass:
         {
             "title":   "Gaza Ceasefire Talks Stall",
             "summary": "Mediators in Cairo failed to bridge gaps between Israeli and Hamas negotiators.",
-            "so_what": "A prolonged conflict means continued civilian suffering.",
-            "lesson":  ["Regional stability remains fragile."],
             "region":  "International",
             "theme":   "Security",
         }
@@ -137,8 +135,6 @@ class TestCallSummaryThreePass:
         {
             "title":   "Gaza Ceasefire Talks Stall",
             "summary": "Mediators in Cairo reportedly failed to bridge gaps between Israeli and Hamas negotiators.",
-            "so_what": "A prolonged conflict means continued civilian suffering.",
-            "lesson":  ["Regional stability remains fragile."],
             "region":  "International",
             "theme":   "Security",
         }

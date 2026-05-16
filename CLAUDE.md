@@ -239,15 +239,42 @@ semantic tokens that flip between light and dark. Always use tokens — never ha
 
 ## Observability — Langfuse Cloud
 
-Token counts, cost, and latency for every Claude call are tracked in **Langfuse Cloud**.
+All LLM observability (token counts, cost, latency, and translation quality scores) is handled by **Langfuse Cloud**. Do **not** add custom token-tracking code (`_record_token_usage`, `pricing.py`, etc.) — Langfuse handles all of it.
 
-- **Dashboard:** cloud.langfuse.com → your project → Traces
-- **job.py:** `_call_claude` is decorated with `@observe(as_type="generation")` — every translation, assessment, and distillation call appears as a separate generation
-- **weekly_summary.py:** `_call_summary` is decorated with `@observe(as_type="generation")` — combined token usage across all 3 passes logged per run
-- **Cost view:** Traces → click a trace → see input/output tokens + cost per generation
-- **Secrets:** `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_BASE_URL` in GitHub Actions; `LANGFUSE_BASE_URL` is aliased to `LANGFUSE_HOST` at runtime
+- **Dashboard:** cloud.langfuse.com → your project
+- **Secrets:** `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_BASE_URL` in GitHub Actions; `LANGFUSE_BASE_URL` is aliased to `LANGFUSE_HOST` at runtime via `os.environ.setdefault`
 
-Do **not** add any custom token-tracking code (no `_record_token_usage`, no `pricing.py`) — Langfuse handles it.
+### Traces & Generations (job.py)
+
+| Trace/Generation name | Type | What it covers |
+|---|---|---|
+| `translate:zaobao` / `translate:astro` | generation | Each translation batch — tokens, cost, latency |
+| `assess:zaobao` / `assess:astro` | **span** (parent) | Wraps all assess batches for one source; holds the quality score |
+| `assess:zaobao` / `assess:astro` | generation (child) | Individual assess batch — tokens, cost, latency |
+| `distill:zaobao` / `distill:astro` | generation | Rule distillation — tokens, cost |
+
+`assess_translations()` is decorated with `@observe(as_type="span")` so assessment generations nest under it as children, and the quality score attaches to that trace.
+
+### Translation Quality Score
+
+After every `assess_translations()` run, the avg score (1–5 scale) is logged to Langfuse via `score_current_trace(name="translation_quality", ...)`. Visible in **Scores** tab on the dashboard. Use this to track whether distilled rules are improving quality over time.
+
+### Traces & Generations (weekly_summary.py)
+
+`_call_summary` is decorated with `@observe(as_type="generation")`. The 3 individual Claude calls are wrapped as named child observations:
+
+| Child name | What it covers |
+|---|---|
+| `summary:generate` | Pass 1 — topic generation |
+| `summary:factcheck` | Pass 2 — fact-check and correction |
+| `summary:translate-zh` | Pass 3 — Chinese translation |
+
+### Langfuse SDK usage notes
+
+- `from langfuse import get_client as _langfuse_client, observe` — only import from root `langfuse`; `langfuse.decorators` and `langfuse.anthropic` do not exist in v4
+- `update_current_generation(name=..., model=..., usage_details={"input": N, "output": N})` — use inside `@observe(as_type="generation")` functions
+- `score_current_trace(name=..., value=..., data_type="NUMERIC")` — use inside `@observe` functions to log a score on the current trace
+- `_langfuse_client().flush()` — required at end of both scripts to prevent dropped async events before process exit
 
 ---
 

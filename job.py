@@ -539,11 +539,13 @@ def translate_astro(rows: list[dict], prompt: str) -> list[dict]:
     return _translate_batch("astro", rows, prompt, classify=True)
 
 
+@observe(as_type="span")
 def assess_translations(rows: list[dict], source: str) -> tuple[list[dict], list[dict], list[dict], float]:
     """Assess translation quality. Returns (passed, failed, failure_samples, avg_score).
 
     Defensive: if Sonnet returns wrong number of results, default missing items to score=3
     (pass) so we never crash and never falsely reject valid translations.
+    Logs avg_score (1–5) to Langfuse as a 'translation_quality' score on the trace.
     """
     passed, failed, failure_samples, scores = [], [], [], []
     for i in range(0, len(rows), ASSESS_BATCH_SIZE):
@@ -588,6 +590,12 @@ def assess_translations(rows: list[dict], source: str) -> tuple[list[dict], list
         print(f"[{source}] assessed batch {i // ASSESS_BATCH_SIZE + 1}: {batch_passed}/{len(batch)} passed", flush=True)
     avg_score = round(sum(scores) / len(scores), 2) if scores else 0.0
     print(f"[{source}] assessment: {len(passed)} passed, {len(failed)} failed, avg_score={avg_score}", flush=True)
+    _langfuse_client().score_current_trace(
+        name="translation_quality",
+        value=avg_score,
+        data_type="NUMERIC",
+        comment=f"{source}: {len(passed)}/{len(passed) + len(failed)} passed (1–5 scale)",
+    )
     return passed, failed, failure_samples, avg_score
 
 

@@ -231,11 +231,18 @@ def _parse_topics(body: str, label: str) -> dict:
 
 @observe(as_type="generation")
 def _call_summary(content: str) -> tuple[dict, object]:
-    """Two-pass generation: produce topics then fact-check them.
+    """Three-pass generation: produce topics, fact-check, then translate to Chinese.
 
-    Returns (corrected_payload, combined_usage) where combined_usage has
-    input_tokens and output_tokens summed across both API calls.
+    Returns (translated_payload, combined_usage) where combined_usage has
+    input_tokens and output_tokens summed across all three API calls.
+
+    Prompt caching: the headlines block is placed first in the system list with
+    cache_control=ephemeral. Pass 1 writes the cache; Pass 2 (which fires seconds
+    later) gets a cache hit — cutting Pass 2 headline input cost by ~90%.
     """
+    # Shared headlines block — byte-identical across Pass 1 and Pass 2 for cache hit
+    headlines_block = {"type": "text", "text": content, "cache_control": {"type": "ephemeral"}}
+
     # ── Pass 1: generate ──────────────────────────────────────────────────────
     with _langfuse_client().start_as_current_observation(
         name="summary:generate", as_type="generation", model=SUMMARY_MODEL
@@ -243,8 +250,8 @@ def _call_summary(content: str) -> tuple[dict, object]:
         msg1 = claude.messages.create(
             model=SUMMARY_MODEL,
             max_tokens=6000,
-            system=SUMMARY_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": content}],
+            system=[headlines_block, {"type": "text", "text": SUMMARY_SYSTEM_PROMPT}],
+            messages=[{"role": "user", "content": "Generate the topic clusters from the headlines above."}],
         )
         obs1.update(usage_details={"input": msg1.usage.input_tokens, "output": msg1.usage.output_tokens})
     payload = _parse_topics(msg1.content[0].text if msg1.content else "", "pass-1")
@@ -252,18 +259,15 @@ def _call_summary(content: str) -> tuple[dict, object]:
     print(f"[summary] pass-1: {topic_count_before} topics generated", flush=True)
 
     # ── Pass 2: fact-check ────────────────────────────────────────────────────
-    fact_check_input = (
-        f"HEADLINES:\n{content}\n\n"
-        f"TOPICS:\n{json.dumps(payload, ensure_ascii=False, indent=2)}"
-    )
+    # Headlines stay in system (cached); only the topics JSON goes in user message.
     with _langfuse_client().start_as_current_observation(
         name="summary:factcheck", as_type="generation", model=SUMMARY_MODEL
     ) as obs2:
         msg2 = claude.messages.create(
             model=SUMMARY_MODEL,
             max_tokens=6000,
-            system=FACT_CHECK_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": fact_check_input}],
+            system=[headlines_block, {"type": "text", "text": FACT_CHECK_SYSTEM_PROMPT}],
+            messages=[{"role": "user", "content": f"TOPICS:\n{json.dumps(payload, ensure_ascii=False, indent=2)}"}],
         )
         obs2.update(usage_details={"input": msg2.usage.input_tokens, "output": msg2.usage.output_tokens})
     corrected = _parse_topics(msg2.content[0].text if msg2.content else "", "pass-2")

@@ -191,7 +191,7 @@ class TestCallSummaryThreePass:
         assert usage.output_tokens == 380, f"Expected 380 output tokens, got {usage.output_tokens}"
 
     def test_chinese_prompt_used_for_pass3(self):
-        """Pass 3 must use CHINESE_TRANSLATION_SYSTEM_PROMPT as the system prompt."""
+        """Pass 3 must use CHINESE_TRANSLATION_SYSTEM_PROMPT as the system prompt (string)."""
         weekly_summary.claude = MagicMock()
         weekly_summary.claude.messages.create.side_effect = [
             _make_claude_response(_topics_json(self._PASS1_TOPICS)),
@@ -201,10 +201,55 @@ class TestCallSummaryThreePass:
 
         weekly_summary._call_summary("HEADLINES: some content")
         calls = weekly_summary.claude.messages.create.call_args_list
-        # Third call must use the Chinese translation prompt
         third_call_kwargs = calls[2][1]
         assert third_call_kwargs.get("system") == weekly_summary.CHINESE_TRANSLATION_SYSTEM_PROMPT, (
             "Pass 3 must use CHINESE_TRANSLATION_SYSTEM_PROMPT."
+        )
+
+    def _run_call_summary(self):
+        """Helper: run _call_summary with standard mocks, return call_args_list."""
+        weekly_summary.claude = MagicMock()
+        weekly_summary.claude.messages.create.side_effect = [
+            _make_claude_response(_topics_json(self._PASS1_TOPICS)),
+            _make_claude_response(_topics_json(self._PASS2_TOPICS)),
+            _make_claude_response(_translations_json(self._PASS3_ZH)),
+        ]
+        weekly_summary._call_summary("HEADLINES: some content")
+        return weekly_summary.claude.messages.create.call_args_list
+
+    def test_pass1_system_is_list_with_cache_control(self):
+        """Pass 1 system must be a list with a cache_control block for prompt caching."""
+        calls = self._run_call_summary()
+        system = calls[0][1].get("system")
+        assert isinstance(system, list), "Pass 1 system must be a list (for prompt caching)."
+        assert any(
+            isinstance(b, dict) and b.get("cache_control") == {"type": "ephemeral"}
+            for b in system
+        ), "Pass 1 system must include a block with cache_control: ephemeral."
+
+    def test_pass2_system_is_list_with_cache_control(self):
+        """Pass 2 system must share the same cacheable headlines block as Pass 1."""
+        calls = self._run_call_summary()
+        system = calls[1][1].get("system")
+        assert isinstance(system, list), "Pass 2 system must be a list (for prompt caching)."
+        assert any(
+            isinstance(b, dict) and b.get("cache_control") == {"type": "ephemeral"}
+            for b in system
+        ), "Pass 2 system must include a block with cache_control: ephemeral."
+
+    def test_pass1_pass2_share_identical_headlines_block(self):
+        """The cached headlines block must be byte-identical between Pass 1 and Pass 2."""
+        calls = self._run_call_summary()
+        p1_cached = next(
+            b for b in calls[0][1]["system"]
+            if isinstance(b, dict) and b.get("cache_control")
+        )
+        p2_cached = next(
+            b for b in calls[1][1]["system"]
+            if isinstance(b, dict) and b.get("cache_control")
+        )
+        assert p1_cached["text"] == p2_cached["text"], (
+            "Headlines block must be byte-identical in Pass 1 and Pass 2 for cache hit."
         )
 
 

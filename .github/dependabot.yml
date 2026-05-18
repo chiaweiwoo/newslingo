@@ -9,14 +9,19 @@ updates:
       python-deps:
         patterns: ["*"]
 
-  # Frontend npm dependencies
+  # Frontend npm dependencies — patch and minor only
+  # Major bumps are breaking changes and require manual migration.
   - package-ecosystem: "npm"
     directory: "/frontend"
     schedule:
       interval: "weekly"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       frontend-deps:
         patterns: ["*"]
+        update-types: ["patch", "minor"]
 
   # GitHub Actions versions
   - package-ecosystem: "github-actions"

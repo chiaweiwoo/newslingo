@@ -32,9 +32,9 @@ def _make_claude_response(text: str, stop_reason: str = "end_turn", in_tok: int 
 
 
 class TestModelAndToolConfig:
-    def test_model_is_exactly_sonnet_46(self):
-        assert ai_radar.AI_RADAR_MODEL == "claude-sonnet-4-6"
-        assert "haiku" not in ai_radar.AI_RADAR_MODEL.lower()
+    def test_model_is_web_search_compatible_haiku(self):
+        assert ai_radar.AI_RADAR_MODEL == "claude-3-5-haiku-latest"
+        assert "haiku" in ai_radar.AI_RADAR_MODEL.lower()
 
     def test_web_search_tool_is_configured(self):
         tool = ai_radar.WEB_SEARCH_TOOL

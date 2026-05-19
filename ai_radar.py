@@ -10,6 +10,7 @@ Non-fatal: any failure is logged and the job exits 0.
 
 import json
 import os
+import re
 import sys
 import time
 import types
@@ -146,6 +147,11 @@ def _extract_json_object(text: str) -> str | None:
     return text[first:last + 1]
 
 
+def _strip_citation_markup(text: str) -> str:
+    """Remove Anthropic inline citation tags that can break JSON strings."""
+    return re.sub(r"<cite\b[^>]*>.*?</cite>", "", text, flags=re.IGNORECASE | re.DOTALL)
+
+
 def _assistant_text(message: object) -> str:
     """Collect text blocks from a Claude message response."""
     parts: list[str] = []
@@ -157,14 +163,17 @@ def _assistant_text(message: object) -> str:
 
 def _parse_items_payload(body: str) -> dict:
     """Parse a JSON object with an items list from Claude output."""
-    extracted = _extract_json_object(body)
-    if extracted:
+    candidates = [body, _strip_citation_markup(body)]
+    for candidate in candidates:
+        extracted = _extract_json_object(candidate)
+        if not extracted:
+            continue
         try:
             parsed = json.loads(extracted)
             if isinstance(parsed, dict) and isinstance(parsed.get("items"), list):
                 return parsed
         except json.JSONDecodeError:
-            pass
+            continue
     raise ValueError(f"[ai-radar] failed to parse JSON. Body (first 400): {body[:400]!r}")
 
 

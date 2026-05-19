@@ -90,6 +90,21 @@ class TestJsonParsing:
         payload = ai_radar._parse_items_payload('{"items": []}')
         assert payload == {"items": []}
 
+    def test_parse_items_payload_strips_citation_markup(self):
+        raw = """```json
+{
+  "items": [
+    {
+      "title": "OpenAI Update",
+      "description": "<cite index="2-1">OpenAI launched a feature</cite> for enterprise users.",
+      "sources": [{"title": "OpenAI", "url": "https://example.com"}]
+    }
+  ]
+}
+```"""
+        payload = ai_radar._parse_items_payload(raw)
+        assert payload["items"][0]["description"] == " for enterprise users."
+
 
 class TestCallAiRadar:
     def test_call_category_uses_web_search_tool(self):

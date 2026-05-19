@@ -37,9 +37,11 @@ claude = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=180.0)
 
 AI_RADAR_MODEL = "claude-haiku-4-5"
 AI_RADAR_FALLBACK_MODEL = "claude-sonnet-4-6"
+AI_RADAR_TRANSLATION_MODEL = "claude-haiku-4-5"
 LOOKBACK_DAYS = 7
 WEB_SEARCH_MAX_USES = 3
 AI_RADAR_MAX_TOKENS = 2600
+AI_RADAR_TRANSLATION_MAX_TOKENS = 2200
 RATE_LIMIT_RETRIES = 3
 RATE_LIMIT_SLEEP_SECONDS = 20
 WEB_SEARCH_TOOL = {
@@ -142,6 +144,28 @@ AI_RADAR_SYSTEM_PROMPT = (
     "Return ONLY the JSON object. No preamble, no explanation, no markdown fences."
 )
 
+AI_RADAR_TRANSLATION_SYSTEM_PROMPT = (
+    "You are a news translator. Translate English AI news titles and descriptions into Simplified Chinese.\n\n"
+    "You will receive a numbered list of items in this format:\n"
+    "  IDX: <integer>\n"
+    "  TITLE: <English title>\n"
+    "  DESCRIPTION: <English description>\n\n"
+    "For each item output one JSON object with exactly three keys:\n"
+    '  {"idx": <same integer>, "title_zh": "<Simplified Chinese title>", "description_zh": "<Simplified Chinese description>"}\n\n'
+    "Rules:\n"
+    "  - Translate faithfully; do not add or remove factual meaning.\n"
+    "  - Preserve concise news style.\n"
+    "  - Use standard Simplified Chinese proper nouns where they exist.\n"
+    "  - Keep product names, model names, chip names, and protocol names in English when that is clearer.\n"
+    "  - Do not expand abbreviations.\n"
+    "  - If an item's English text is empty, return empty Chinese strings for that item.\n\n"
+    "SELF-CHECK BEFORE RETURNING:\n"
+    "  - Confirm the output is a JSON array.\n"
+    "  - Confirm every object has idx, title_zh, and description_zh.\n"
+    "  - Confirm the idx values match the input item indices.\n\n"
+    "Return ONLY the JSON array. No preamble, no explanation, no markdown fences."
+)
+
 
 def _extract_json_object(text: str) -> str | None:
     """Best-effort extract a JSON object from text that may contain prose."""
@@ -208,6 +232,14 @@ def _is_model_not_found_error(exc: Exception) -> bool:
     return "not_found_error" in str(exc) or "model:" in str(exc)
 
 
+def _extract_json_array(text: str) -> str | None:
+    first = text.find("[")
+    last = text.rfind("]")
+    if first == -1 or last == -1 or last <= first:
+        return None
+    return text[first:last + 1]
+
+
 def _call_category(category: dict, today_utc: datetime, model: str) -> tuple[dict, object]:
     """Generate one AI radar category using a smaller, lower-risk web-search request."""
     today_label = today_utc.date().isoformat()
@@ -260,6 +292,50 @@ def _call_category(category: dict, today_utc: datetime, model: str) -> tuple[dic
     raise RuntimeError(f"[ai-radar] exhausted retries for {category['key']}")
 
 
+def _translate_categories_to_zh(categories: list[dict]) -> tuple[list[dict], object]:
+    rows: list[tuple[int, dict]] = []
+    for category in categories:
+        for item in category.get("items", []):
+            rows.append((len(rows), item))
+
+    if not rows:
+        usage = types.SimpleNamespace(input_tokens=0, output_tokens=0)
+        return categories, usage
+
+    lines: list[str] = []
+    for idx, item in rows:
+        lines.append(f"IDX: {idx}")
+        lines.append(f"TITLE: {item.get('title', '')}")
+        lines.append(f"DESCRIPTION: {item.get('description', '')}")
+        lines.append("")
+    slim_input = "\n".join(lines).strip()
+
+    msg = claude.messages.create(
+        model=AI_RADAR_TRANSLATION_MODEL,
+        max_tokens=AI_RADAR_TRANSLATION_MAX_TOKENS,
+        system=AI_RADAR_TRANSLATION_SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": slim_input}],
+    )
+
+    raw = _assistant_text(msg)
+    extracted = _extract_json_array(raw)
+    if not extracted:
+        raise ValueError(f"[ai-radar] translation pass failed to return JSON array. Body (first 400): {raw[:400]!r}")
+
+    translated = json.loads(extracted)
+    if not isinstance(translated, list):
+        raise ValueError(f"[ai-radar] translation pass returned non-list payload. Body (first 400): {raw[:400]!r}")
+
+    flat_items = [item for _idx, item in rows]
+    for entry in translated:
+        idx = entry.get("idx")
+        if isinstance(idx, int) and 0 <= idx < len(flat_items):
+            flat_items[idx]["title_zh"] = entry.get("title_zh", "")
+            flat_items[idx]["description_zh"] = entry.get("description_zh", "")
+
+    return categories, msg.usage
+
+
 @observe(name="ai-radar:generate", as_type="generation")
 def _call_ai_radar(today_utc: datetime) -> tuple[dict, object]:
     """Generate the full AI radar payload using smaller sequential category requests."""
@@ -293,6 +369,10 @@ def _call_ai_radar(today_utc: datetime) -> tuple[dict, object]:
             categories.append(result)
             total_input += getattr(usage, "input_tokens", 0) or 0
             total_output += getattr(usage, "output_tokens", 0) or 0
+
+    categories, translation_usage = _translate_categories_to_zh(categories)
+    total_input += getattr(translation_usage, "input_tokens", 0) or 0
+    total_output += getattr(translation_usage, "output_tokens", 0) or 0
 
     usage_details = {"input": total_input, "output": total_output}
     _langfuse_client().update_current_generation(model=model_in_use, usage_details=usage_details)

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   Box, Center, Divider, Drawer, DrawerBody, DrawerCloseButton,
-  DrawerContent, DrawerHeader, DrawerOverlay, Flex, HStack, Link,
+  DrawerContent, DrawerHeader, DrawerOverlay, Flex, HStack,
   Spinner, Text, VStack,
 } from '@chakra-ui/react';
 import { useQuery } from '@tanstack/react-query';
@@ -13,6 +13,7 @@ const supabase = createClient(
 );
 
 type RadarKey = 'governance' | 'product' | 'infrastructure';
+type Lang = 'en' | 'zh';
 
 interface SourceLink {
   title: string;
@@ -21,7 +22,9 @@ interface SourceLink {
 
 interface RadarItem {
   title: string;
+  title_zh?: string;
   description: string;
+  description_zh?: string;
   sources: SourceLink[];
 }
 
@@ -46,7 +49,19 @@ const TABS: { key: RadarKey; label: string }[] = [
   { key: 'infrastructure', label: 'Infrastructure' },
 ];
 
-function RadarCard({ item }: { item: RadarItem }) {
+function getLang(): Lang {
+  try { return (localStorage.getItem('aiRadar.lang') as Lang) || 'en'; }
+  catch { return 'en'; }
+}
+
+function setLangStorage(l: Lang) {
+  try { localStorage.setItem('aiRadar.lang', l); } catch {}
+}
+
+function RadarCard({ item, lang }: { item: RadarItem; lang: Lang }) {
+  const title = lang === 'zh' && item.title_zh ? item.title_zh : item.title;
+  const description = lang === 'zh' && item.description_zh ? item.description_zh : item.description;
+
   return (
     <Box py={3}>
       <Text
@@ -57,35 +72,23 @@ function RadarCard({ item }: { item: RadarItem }) {
         mb={1.5}
         fontFamily="'Noto Serif SC', 'Georgia', serif"
       >
-        {item.title}
+        {title}
       </Text>
       <Text fontSize="xs" color="brand.muted" lineHeight="1.6">
-        {item.description}
+        {description}
       </Text>
-
-      {!!item.sources?.length && (
-        <HStack spacing={2} flexWrap="wrap" pt={2}>
-          {item.sources.slice(0, 3).map((source, i) => (
-            <Link
-              key={`${source.url}-${i}`}
-              href={source.url}
-              isExternal
-              fontSize="2xs"
-              color="brand.red"
-              lineHeight="1.5"
-              _hover={{ textDecoration: 'underline' }}
-            >
-              {source.title}
-            </Link>
-          ))}
-        </HStack>
-      )}
     </Box>
   );
 }
 
 export default function AIRadarDrawer({ isOpen, onClose }: Props) {
   const [activeTab, setActiveTab] = useState<RadarKey>('governance');
+  const [lang, setLang] = useState<Lang>(getLang);
+
+  const handleLang = (l: Lang) => {
+    setLang(l);
+    setLangStorage(l);
+  };
 
   const { data: radar, isLoading } = useQuery({
     queryKey: ['ai-radar'],
@@ -128,20 +131,47 @@ export default function AIRadarDrawer({ isOpen, onClose }: Props) {
         <DrawerCloseButton color="brand.muted" mt={1} />
 
         <DrawerHeader borderBottom="1px solid" borderColor="brand.rule" pb={0} pt={4}>
-          <Box pr={6}>
-            <Text
-              fontSize="md"
-              fontWeight="700"
-              color="brand.ink"
-              lineHeight="1.2"
-              fontFamily="'Noto Serif SC', 'Georgia', serif"
-            >
-              AI Radar
-            </Text>
-            <Text fontSize="xs" color="brand.muted" fontWeight="400" mt={0.5}>
-              The most important AI developments from the past 7 days.
-            </Text>
-          </Box>
+          <Flex justify="space-between" align="flex-start" pr={6}>
+            <Box>
+              <Text
+                fontSize="md"
+                fontWeight="700"
+                color="brand.ink"
+                lineHeight="1.2"
+                fontFamily="'Noto Serif SC', 'Georgia', serif"
+              >
+                AI Radar
+              </Text>
+              <Text fontSize="xs" color="brand.muted" fontWeight="400" mt={0.5}>
+                The most important AI developments from the past 7 days.
+              </Text>
+            </Box>
+
+            <HStack spacing={0} mt={0.5}>
+              {(['en', 'zh'] as const).map((l, i) => (
+                <Box
+                  key={l}
+                  as="button"
+                  onClick={() => handleLang(l)}
+                  px={2.5}
+                  py={1}
+                  fontSize="2xs"
+                  fontWeight="700"
+                  letterSpacing="wide"
+                  color={lang === l ? 'brand.paper' : 'brand.muted'}
+                  bg={lang === l ? 'brand.red' : 'transparent'}
+                  border="1px solid"
+                  borderColor={lang === l ? 'brand.red' : 'brand.rule'}
+                  borderRadius={i === 0 ? '3px 0 0 3px' : '0 3px 3px 0'}
+                  transition="all 0.15s"
+                  _hover={{ color: lang === l ? 'brand.paper' : 'brand.ink' }}
+                  lineHeight="1.4"
+                >
+                  {l === 'en' ? 'EN' : '中'}
+                </Box>
+              ))}
+            </HStack>
+          </Flex>
 
           <Flex mt={3}>
             {TABS.map(({ key, label }) => {
@@ -193,7 +223,7 @@ export default function AIRadarDrawer({ isOpen, onClose }: Props) {
               {activeItems.map((item, i) => (
                 <Box key={`${item.title}-${i}`}>
                   {i > 0 && <Divider borderColor="brand.rule" />}
-                  <RadarCard item={item} />
+                  <RadarCard item={item} lang={lang} />
                 </Box>
               ))}
               <Divider borderColor="brand.rule" />

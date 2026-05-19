@@ -48,6 +48,7 @@ class TestModelAndToolConfig:
         assert ai_radar.LOOKBACK_DAYS == 7
         assert ai_radar.WEB_SEARCH_MAX_USES == 3
         assert ai_radar.AI_RADAR_MAX_TOKENS == 2600
+        assert ai_radar.AI_RADAR_TRANSLATION_MAX_TOKENS == 2200
 
 
 class TestPromptContract:
@@ -63,6 +64,12 @@ class TestPromptContract:
         assert "1 to 2 source objects" in prompt
         assert "Do not include inline citation markup" in prompt
         assert "8 to 14 words" in prompt
+
+    def test_translation_prompt_contract_present(self):
+        prompt = ai_radar.AI_RADAR_TRANSLATION_SYSTEM_PROMPT
+        assert '"title_zh"' in prompt
+        assert '"description_zh"' in prompt
+        assert "Return ONLY the JSON array" in prompt
 
     def test_contains_three_category_keys(self):
         keys = [spec["key"] for spec in ai_radar.CATEGORY_SPECS]
@@ -107,6 +114,11 @@ class TestJsonParsing:
 ```"""
         payload = ai_radar._parse_items_payload(raw)
         assert payload["items"][0]["description"] == " for enterprise users."
+
+    def test_extract_json_array_from_fenced_output(self):
+        text = '```json\n[{"idx":0}]\n```'
+        result = ai_radar._extract_json_array(text)
+        assert result == '[{"idx":0}]'
 
 
 class TestCallAiRadar:
@@ -153,12 +165,23 @@ class TestCallAiRadar:
                     types.SimpleNamespace(input_tokens=80, output_tokens=30),
                 ),
             ],
+        ), patch.object(
+            ai_radar,
+            "_translate_categories_to_zh",
+            return_value=(
+                [
+                    {"key": "governance", "title": "AI Governance Radar", "items": [{"title": "A", "description": "B", "title_zh": "甲", "description_zh": "乙", "sources": []}]},
+                    {"key": "product", "title": "AI Product Radar", "items": []},
+                    {"key": "infrastructure", "title": "AI Infrastructure Radar", "items": []},
+                ],
+                types.SimpleNamespace(input_tokens=20, output_tokens=10),
+            ),
         ):
             payload, usage = ai_radar._call_ai_radar(datetime(2026, 5, 19, tzinfo=timezone.utc))
         keys = [category["key"] for category in payload["categories"]]
         assert keys == ["governance", "product", "infrastructure"]
-        assert usage.input_tokens == 300
-        assert usage.output_tokens == 120
+        assert usage.input_tokens == 320
+        assert usage.output_tokens == 130
 
     def test_call_category_retries_rate_limit_errors(self):
         ai_radar.claude = MagicMock()
@@ -192,12 +215,39 @@ class TestCallAiRadar:
                     types.SimpleNamespace(input_tokens=10, output_tokens=5),
                 ),
             ],
+        ), patch.object(
+            ai_radar,
+            "_translate_categories_to_zh",
+            return_value=(
+                [
+                    {"key": "governance", "title": "AI Governance Radar", "items": []},
+                    {"key": "product", "title": "AI Product Radar", "items": []},
+                    {"key": "infrastructure", "title": "AI Infrastructure Radar", "items": []},
+                ],
+                types.SimpleNamespace(input_tokens=6, output_tokens=3),
+            ),
         ):
             payload, usage = ai_radar._call_ai_radar(datetime(2026, 5, 19, tzinfo=timezone.utc))
 
         assert [category["key"] for category in payload["categories"]] == ["governance", "product", "infrastructure"]
-        assert usage.input_tokens == 30
-        assert usage.output_tokens == 15
+        assert usage.input_tokens == 36
+        assert usage.output_tokens == 18
+
+    def test_translate_categories_to_zh_merges_fields(self):
+        ai_radar.claude = MagicMock()
+        ai_radar.claude.messages.create.return_value = _make_claude_response(
+            '[{"idx":0,"title_zh":"标题","description_zh":"描述"}]'
+        )
+
+        categories, usage = ai_radar._translate_categories_to_zh([
+            {"key": "governance", "title": "AI Governance Radar", "items": [{"title": "Title", "description": "Desc", "sources": []}]}
+        ])
+
+        item = categories[0]["items"][0]
+        assert item["title_zh"] == "标题"
+        assert item["description_zh"] == "描述"
+        assert usage.input_tokens == 100
+        assert usage.output_tokens == 200
 
 
 class TestRotation:

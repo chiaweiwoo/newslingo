@@ -33,7 +33,7 @@ def _make_claude_response(text: str, stop_reason: str = "end_turn", in_tok: int 
 
 class TestModelAndToolConfig:
     def test_model_is_web_search_compatible_haiku(self):
-        assert ai_radar.AI_RADAR_MODEL == "claude-3-5-haiku-20241022"
+        assert ai_radar.AI_RADAR_MODEL == "claude-haiku-4-5"
         assert "haiku" in ai_radar.AI_RADAR_MODEL.lower()
         assert ai_radar.AI_RADAR_FALLBACK_MODEL == "claude-sonnet-4-6"
 
@@ -159,7 +159,7 @@ class TestCallAiRadar:
             ai_radar,
             "_call_category",
             side_effect=[
-                Exception("404 not_found_error model: claude-3-5-haiku-20241022"),
+                Exception("404 not_found_error model: claude-haiku-4-5"),
                 (
                     {"key": "governance", "title": "AI Governance Radar", "items": []},
                     types.SimpleNamespace(input_tokens=10, output_tokens=5),

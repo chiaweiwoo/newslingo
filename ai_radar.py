@@ -1,7 +1,7 @@
 """
 NewsLingo AI Radar job - runs daily at 09:30 SGT.
 
-This job uses Claude Haiku 3.5 with Anthropic's server-side web search tool
+This job uses Claude Haiku 4.5 with Anthropic's server-side web search tool
 to compile a 7-day AI developments briefing across governance, product, and
 infrastructure. Only the latest active row is shown in the frontend drawer.
 
@@ -34,7 +34,7 @@ os.environ.setdefault("LANGFUSE_HOST", os.getenv("LANGFUSE_BASE_URL", "https://c
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 claude = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=180.0)
 
-AI_RADAR_MODEL = "claude-3-5-haiku-20241022"
+AI_RADAR_MODEL = "claude-haiku-4-5"
 AI_RADAR_FALLBACK_MODEL = "claude-sonnet-4-6"
 LOOKBACK_DAYS = 7
 WEB_SEARCH_MAX_USES = 2

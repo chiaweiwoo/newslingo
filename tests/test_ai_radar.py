@@ -47,7 +47,7 @@ class TestModelAndToolConfig:
     def test_category_calls_use_smaller_budgets(self):
         assert ai_radar.LOOKBACK_DAYS == 7
         assert ai_radar.WEB_SEARCH_MAX_USES == 3
-        assert ai_radar.AI_RADAR_MAX_TOKENS == 1800
+        assert ai_radar.AI_RADAR_MAX_TOKENS == 2600
 
 
 class TestPromptContract:

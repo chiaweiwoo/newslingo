@@ -39,7 +39,7 @@ AI_RADAR_MODEL = "claude-haiku-4-5"
 AI_RADAR_FALLBACK_MODEL = "claude-sonnet-4-6"
 LOOKBACK_DAYS = 7
 WEB_SEARCH_MAX_USES = 3
-AI_RADAR_MAX_TOKENS = 1800
+AI_RADAR_MAX_TOKENS = 2600
 RATE_LIMIT_RETRIES = 3
 RATE_LIMIT_SLEEP_SECONDS = 20
 WEB_SEARCH_TOOL = {
@@ -91,8 +91,8 @@ AI_RADAR_SYSTEM_PROMPT = (
     "  - Avoid duplicates, incremental minor updates, and repetitive follow-ons.\n"
     "  - If two stories are materially the same development, merge them into one stronger item.\n\n"
     "OUTPUT SIZE:\n"
-    "  - Return 3 to 5 items when the category has enough qualifying developments.\n"
-    "  - Return fewer only when the last 7 days genuinely do not support more.\n"
+    "  - Return as many qualifying items as fit within the response budget.\n"
+    "  - Do not stop at a fixed count if more strong items exist.\n"
     "  - Return an empty items array only if the category is truly quiet after searching.\n\n"
     "ITEM RULES:\n"
     "  - title: short English title, no hype, no date\n"
@@ -215,7 +215,7 @@ def _call_category(category: dict, today_utc: datetime, model: str) -> tuple[dic
         f"Today's UTC date is {today_label}.\n"
         f"Search the web and compile {category['title']} for the last {LOOKBACK_DAYS} days.\n"
         f"Focus only on this category: {category['focus']}\n"
-        "Use a small number of high-value searches. Return 3 to 5 items when possible, 1 to 2 sources per item, "
+        "Use a small number of high-value searches. Return as many qualifying items as fit cleanly, 1 to 2 sources per item, "
         "and no inline citation tags. Prefer primary sources. Return the JSON object only."
     )
 

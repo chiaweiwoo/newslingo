@@ -106,6 +106,56 @@ for j, result in enumerate(results):
     row = batch[j]  # IndexError if len(results) > len(batch)
 ```
 
+### 7. AI Radar: use repo-proven Haiku model + direct web search only
+
+`ai_radar.py` is a separate daily job. Do not assume Anthropic model names from public docs.
+Use the exact repo-proven model first:
+
+- `AI_RADAR_MODEL = "claude-haiku-4-5"`
+- `AI_RADAR_FALLBACK_MODEL = "claude-sonnet-4-6"`
+
+Anthropic web search on this Haiku path requires:
+
+```python
+WEB_SEARCH_TOOL = {
+    "type": "web_search_20260209",
+    "name": "web_search",
+    "max_uses": 2,
+    "allowed_callers": ["direct"],
+}
+```
+
+Without `allowed_callers=["direct"]`, the hosted job fails with:
+`invalid_request_error: does not support programmatic tool calling`.
+
+### 8. AI Radar: keep the request small and the output contract tight
+
+AI Radar is a search-and-summarize job, not a long-form analyst memo.
+The working shape is:
+
+- `LOOKBACK_DAYS = 7`
+- sequential per-category calls
+- small search budget (`WEB_SEARCH_MAX_USES = 2`)
+- small item count per category (`1–3`)
+- exactly `1` source per item
+
+Do not revert AI Radar back to a large 14-day, many-item, multi-source request unless
+you are intentionally re-tuning against live Anthropic limits.
+
+### 9. AI Radar: Anthropic web-search responses may break JSON
+
+Even when the prompt says "JSON only", Anthropic web-search responses may still include:
+
+- markdown fences: `````json ... `````
+- inline citation tags inside strings: `<cite index="...">...</cite>`
+
+`ai_radar.py` must therefore:
+
+- extract the JSON object from surrounding prose/fences
+- strip inline `<cite ...>...</cite>` markup before parsing
+
+Do not assume a raw `json.loads(response_text)` is sufficient for AI Radar.
+
 ---
 
 ## Architecture
@@ -134,6 +184,13 @@ GitHub Actions (cron: daily 09:00 SGT)
        ├── _call_summary() pass 3 → Codex Haiku   → translate title + summary to Simplified
        │                                              Chinese; adds title_zh + summary_zh
        └── rotates weekly_summary (deactivates old, inserts new)
+
+GitHub Actions (cron: daily 09:30 SGT)
+  └── ai_radar.py
+       ├── runs 3 category-specific web-search calls (governance / product / infrastructure)
+       ├── uses `claude-haiku-4-5` first, then falls back to `claude-sonnet-4-6` if needed
+       ├── strips Anthropic citation markup before JSON parsing
+       └── rotates ai_radar (deactivates old, inserts new)
 ```
 
 **Constants:**
@@ -153,6 +210,7 @@ GitHub Actions (cron: daily 09:00 SGT)
 | `prompt_rules` | YES | Distilled LLM rules |
 | `learning_digest` | YES | Unused — was written by digest.py (now deleted). Safe to clear. |
 | `weekly_summary` | YES | Top Stories topics; rotated by weekly_summary.py |
+| `ai_radar` | YES | Daily AI Radar payload; rotated by ai_radar.py |
 | `job_runs` | NO | Audit log — preserve |
 | `visits` | NO | Frontend analytics — preserve |
 | `token_usage` | NO | Legacy — was written by custom pricing.py (now deleted). No longer written; Langfuse handles observability. Safe to ignore. |
@@ -168,6 +226,7 @@ GitHub Actions (cron: daily 09:00 SGT)
 | Distillation | `Codex-sonnet-4-6` | Rule extraction from failures |
 | Top Stories Pass 1 + 2 | `Codex-sonnet-4-6` | Generate + fact-check — requires reasoning |
 | Top Stories Pass 3 | `Codex-haiku-4-5` | EN→ZH translation — mechanical task, 3× cheaper |
+| AI Radar | `claude-haiku-4-5` | Daily search + summarise; must use direct-call web search |
 
 **Model invariant for weekly_summary.py:** `SUMMARY_MODEL` must be Sonnet or Opus (never Haiku). `SUMMARY_HAIKU_MODEL` must be Haiku. Do not swap Haiku into Pass 1 or Pass 2.
 
@@ -268,6 +327,14 @@ After every `assess_translations()` run, the avg score (1–5 scale) is logged t
 | `summary:factcheck` | Pass 2 — fact-check and correction |
 | `summary:translate-zh` | Pass 3 — Chinese translation |
 
+### Traces & Generations (ai_radar.py)
+
+`_call_ai_radar` is decorated with `@observe(as_type="generation")`.
+
+| Child/Generation name | What it covers |
+|---|---|
+| `ai-radar:generate` | Full AI Radar generation across 3 categories |
+
 ### Langfuse SDK usage notes
 
 - `from langfuse import get_client as _langfuse_client, observe` — only import from root `langfuse`; `langfuse.decorators` and `langfuse.anthropic` do not exist in v4
@@ -301,6 +368,16 @@ After every `assess_translations()` run, the avg score (1–5 scale) is logged t
 
 - **Actions running stale code** — `workflow_dispatch` queued before a push runs the
   old version. The startup banner confirms the running build.
+
+- **AI Radar fails with `programmatic tool calling`** — the Haiku web-search tool is
+  missing `allowed_callers=["direct"]`. Fix the tool config, not the prompt.
+
+- **AI Radar fails to parse JSON despite fenced JSON in logs** — the response likely
+  contains inline `<cite ...>...</cite>` tags inside JSON strings. Strip citation markup
+  before `json.loads`.
+
+- **AI Radar keeps rate-limiting** — the request got too large again. Reduce window,
+  item count, source count, or search budget before blaming the model.
 
 ---
 

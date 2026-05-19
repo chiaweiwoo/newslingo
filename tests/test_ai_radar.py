@@ -49,6 +49,7 @@ class TestModelAndToolConfig:
         assert ai_radar.WEB_SEARCH_MAX_USES == 3
         assert ai_radar.AI_RADAR_MAX_TOKENS == 2600
         assert ai_radar.AI_RADAR_TRANSLATION_MAX_TOKENS == 2200
+        assert ai_radar.AI_RADAR_TRANSLATION_BATCH_SIZE == 10
 
 
 class TestPromptContract:
@@ -248,6 +249,27 @@ class TestCallAiRadar:
         assert item["description_zh"] == "描述"
         assert usage.input_tokens == 100
         assert usage.output_tokens == 200
+
+    def test_translate_categories_to_zh_batches_large_payloads(self):
+        ai_radar.claude = MagicMock()
+        ai_radar.claude.messages.create.side_effect = [
+            _make_claude_response('[{"idx":0,"title_zh":"甲","description_zh":"乙"}]', in_tok=10, out_tok=5),
+            _make_claude_response('[{"idx":10,"title_zh":"丙","description_zh":"丁"}]', in_tok=12, out_tok=6),
+        ]
+
+        categories, usage = ai_radar._translate_categories_to_zh([
+            {
+                "key": "product",
+                "title": "AI Product Radar",
+                "items": [{"title": f"Title {i}", "description": f"Desc {i}", "sources": []} for i in range(11)],
+            }
+        ])
+
+        assert ai_radar.claude.messages.create.call_count == 2
+        assert categories[0]["items"][0]["title_zh"] == "甲"
+        assert categories[0]["items"][10]["title_zh"] == "丙"
+        assert usage.input_tokens == 22
+        assert usage.output_tokens == 11
 
 
 class TestRotation:

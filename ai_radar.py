@@ -42,6 +42,7 @@ LOOKBACK_DAYS = 7
 WEB_SEARCH_MAX_USES = 3
 AI_RADAR_MAX_TOKENS = 2600
 AI_RADAR_TRANSLATION_MAX_TOKENS = 2200
+AI_RADAR_TRANSLATION_BATCH_SIZE = 10
 RATE_LIMIT_RETRIES = 3
 RATE_LIMIT_SLEEP_SECONDS = 20
 WEB_SEARCH_TOOL = {
@@ -302,38 +303,51 @@ def _translate_categories_to_zh(categories: list[dict]) -> tuple[list[dict], obj
         usage = types.SimpleNamespace(input_tokens=0, output_tokens=0)
         return categories, usage
 
-    lines: list[str] = []
-    for idx, item in rows:
-        lines.append(f"IDX: {idx}")
-        lines.append(f"TITLE: {item.get('title', '')}")
-        lines.append(f"DESCRIPTION: {item.get('description', '')}")
-        lines.append("")
-    slim_input = "\n".join(lines).strip()
-
-    msg = claude.messages.create(
-        model=AI_RADAR_TRANSLATION_MODEL,
-        max_tokens=AI_RADAR_TRANSLATION_MAX_TOKENS,
-        system=AI_RADAR_TRANSLATION_SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": slim_input}],
-    )
-
-    raw = _assistant_text(msg)
-    extracted = _extract_json_array(raw)
-    if not extracted:
-        raise ValueError(f"[ai-radar] translation pass failed to return JSON array. Body (first 400): {raw[:400]!r}")
-
-    translated = json.loads(extracted)
-    if not isinstance(translated, list):
-        raise ValueError(f"[ai-radar] translation pass returned non-list payload. Body (first 400): {raw[:400]!r}")
-
     flat_items = [item for _idx, item in rows]
-    for entry in translated:
-        idx = entry.get("idx")
-        if isinstance(idx, int) and 0 <= idx < len(flat_items):
-            flat_items[idx]["title_zh"] = entry.get("title_zh", "")
-            flat_items[idx]["description_zh"] = entry.get("description_zh", "")
+    total_input = 0
+    total_output = 0
 
-    return categories, msg.usage
+    for start in range(0, len(rows), AI_RADAR_TRANSLATION_BATCH_SIZE):
+        batch = rows[start:start + AI_RADAR_TRANSLATION_BATCH_SIZE]
+        lines: list[str] = []
+        for idx, item in batch:
+            lines.append(f"IDX: {idx}")
+            lines.append(f"TITLE: {item.get('title', '')}")
+            lines.append(f"DESCRIPTION: {item.get('description', '')}")
+            lines.append("")
+        slim_input = "\n".join(lines).strip()
+
+        msg = claude.messages.create(
+            model=AI_RADAR_TRANSLATION_MODEL,
+            max_tokens=AI_RADAR_TRANSLATION_MAX_TOKENS,
+            system=AI_RADAR_TRANSLATION_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": slim_input}],
+        )
+
+        total_input += getattr(msg.usage, "input_tokens", 0) or 0
+        total_output += getattr(msg.usage, "output_tokens", 0) or 0
+
+        raw = _assistant_text(msg)
+        extracted = _extract_json_array(raw)
+        if not extracted:
+            raise ValueError(
+                f"[ai-radar] translation pass failed to return JSON array. Body (first 400): {raw[:400]!r}"
+            )
+
+        translated = json.loads(extracted)
+        if not isinstance(translated, list):
+            raise ValueError(
+                f"[ai-radar] translation pass returned non-list payload. Body (first 400): {raw[:400]!r}"
+            )
+
+        for entry in translated:
+            idx = entry.get("idx")
+            if isinstance(idx, int) and 0 <= idx < len(flat_items):
+                flat_items[idx]["title_zh"] = entry.get("title_zh", "")
+                flat_items[idx]["description_zh"] = entry.get("description_zh", "")
+
+    usage = types.SimpleNamespace(input_tokens=total_input, output_tokens=total_output)
+    return categories, usage
 
 
 @observe(name="ai-radar:generate", as_type="generation")

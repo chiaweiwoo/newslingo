@@ -59,6 +59,15 @@ class TestPromptContract:
         assert "product" in prompt
         assert "infrastructure" in prompt
 
+    def test_includes_confidence_hedging_and_escalation(self):
+        prompt = ai_radar.AI_RADAR_SYSTEM_PROMPT
+        assert "CONFIDENCE HEDGING" in prompt
+        assert "ESCALATION RULE" in prompt
+
+    def test_explicitly_requires_english_output(self):
+        prompt = ai_radar.AI_RADAR_SYSTEM_PROMPT
+        assert "English only" in prompt
+
 
 class TestJsonParsing:
     def test_extract_json_object_from_fenced_output(self):

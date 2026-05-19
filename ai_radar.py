@@ -95,7 +95,7 @@ AI_RADAR_SYSTEM_PROMPT = (
     "  - Return an empty items array if nothing is strong enough.\n\n"
     "ITEM RULES:\n"
     "  - title: short English title, no hype, no date\n"
-    "  - description: one concise English sentence, information-dense, no date, no bullet prefix\n"
+    "  - description: one very concise English sentence, about 10 to 16 words, information-dense, no date, no bullet prefix\n"
     "  - sources: exactly 1 source object pulled from the searched/cited material\n"
     "  - Each source object must contain exactly: title, url\n"
     "  - Use reputable primary or strong reporting sources when available.\n\n"

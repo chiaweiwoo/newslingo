@@ -62,6 +62,7 @@ class TestPromptContract:
         assert "SELF-CHECK" in prompt
         assert "exactly 1 source object" in prompt
         assert "Do not include inline citation markup" in prompt
+        assert "10 to 16 words" in prompt
 
     def test_contains_three_category_keys(self):
         keys = [spec["key"] for spec in ai_radar.CATEGORY_SPECS]

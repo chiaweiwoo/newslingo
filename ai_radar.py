@@ -45,6 +45,7 @@ WEB_SEARCH_TOOL = {
     "type": "web_search_20260209",
     "name": "web_search",
     "max_uses": WEB_SEARCH_MAX_USES,
+    "allowed_callers": ["direct"],
 }
 
 CATEGORY_SPECS = [

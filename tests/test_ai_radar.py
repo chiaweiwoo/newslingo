@@ -42,6 +42,7 @@ class TestModelAndToolConfig:
         assert tool["type"] == "web_search_20260209"
         assert tool["name"] == "web_search"
         assert tool["max_uses"] == ai_radar.WEB_SEARCH_MAX_USES
+        assert tool["allowed_callers"] == ["direct"]
 
     def test_category_calls_use_smaller_budgets(self):
         assert ai_radar.LOOKBACK_DAYS == 7

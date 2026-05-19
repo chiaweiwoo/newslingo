@@ -43,8 +43,9 @@ class TestModelAndToolConfig:
         assert tool["max_uses"] == ai_radar.WEB_SEARCH_MAX_USES
 
     def test_category_calls_use_smaller_budgets(self):
-        assert ai_radar.WEB_SEARCH_MAX_USES == 3
-        assert ai_radar.AI_RADAR_MAX_TOKENS == 1400
+        assert ai_radar.LOOKBACK_DAYS == 7
+        assert ai_radar.WEB_SEARCH_MAX_USES == 2
+        assert ai_radar.AI_RADAR_MAX_TOKENS == 1000
 
 
 class TestPromptContract:
@@ -114,7 +115,7 @@ class TestCallAiRadar:
         second_call = ai_radar.claude.messages.create.call_args_list[1].kwargs
         assert second_call["messages"][1]["role"] == "assistant"
 
-    def test_call_ai_radar_combines_parallel_category_results(self):
+    def test_call_ai_radar_combines_category_results(self):
         with patch.object(
             ai_radar,
             "_call_category",
@@ -176,7 +177,7 @@ class TestRotation:
             call("ai_radar"),
             call().insert(
                 {
-                    "window_start": "2026-05-05",
+                    "window_start": "2026-05-12",
                     "window_end": "2026-05-19",
                     "payload": {"categories": []},
                     "active": True,

@@ -139,7 +139,7 @@ export default function AIRadarDrawer({ isOpen, onClose }: Props) {
               AI Radar
             </Text>
             <Text fontSize="xs" color="brand.muted" fontWeight="400" mt={0.5}>
-              The most important AI developments from the past 14 days.
+              The most important AI developments from the past 7 days.
             </Text>
           </Box>
 
@@ -198,7 +198,7 @@ export default function AIRadarDrawer({ isOpen, onClose }: Props) {
               ))}
               <Divider borderColor="brand.rule" />
               <Text fontSize="2xs" color="brand.muted" textAlign="center" pt={3} pb={2} lineHeight="1.6">
-                Updated daily · past 14 days
+                Updated daily · past 7 days
               </Text>
             </VStack>
           )}

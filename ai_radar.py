@@ -1,8 +1,8 @@
 """
 NewsLingo AI Radar job - runs daily at 09:30 SGT.
 
-This job uses Claude Sonnet 4.6 with Anthropic's server-side web search tool
-to compile a 14-day AI developments briefing across governance, product, and
+This job uses Claude Haiku 3.5 with Anthropic's server-side web search tool
+to compile a 7-day AI developments briefing across governance, product, and
 infrastructure. Only the latest active row is shown in the frontend drawer.
 
 Non-fatal: any failure is logged and the job exits 0.
@@ -13,7 +13,6 @@ import os
 import sys
 import time
 import types
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
 import anthropic
@@ -36,9 +35,9 @@ supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 claude = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=180.0)
 
 AI_RADAR_MODEL = "claude-3-5-haiku-latest"
-LOOKBACK_DAYS = 14
-WEB_SEARCH_MAX_USES = 3
-AI_RADAR_MAX_TOKENS = 1400
+LOOKBACK_DAYS = 7
+WEB_SEARCH_MAX_USES = 2
+AI_RADAR_MAX_TOKENS = 1000
 RATE_LIMIT_RETRIES = 3
 RATE_LIMIT_SLEEP_SECONDS = 20
 WEB_SEARCH_TOOL = {
@@ -76,10 +75,10 @@ CATEGORY_SPECS = [
 
 AI_RADAR_SYSTEM_PROMPT = (
     "You are a senior AI radar analyst preparing a concise briefing for busy professionals.\n"
-    "Your job is to extract the most important AI developments from the last 14 days using web search.\n\n"
+    "Your job is to extract the most important AI developments from the last 7 days using web search.\n\n"
     "You will handle exactly ONE category per request, specified in the user message.\n\n"
     "WINDOW:\n"
-    "  - Include only developments from the last 14 days relative to the current date.\n"
+    "  - Include only developments from the last 7 days relative to the current date.\n"
     "  - If a development falls outside the window, exclude it.\n"
     "  - Use searched and cited sources only. Do not rely on background knowledge alone.\n\n"
     "SELECTION STANDARD:\n"
@@ -131,7 +130,7 @@ AI_RADAR_SYSTEM_PROMPT = (
     "  - Confirm the response is valid JSON with exactly one top-level key: items.\n"
     "  - Confirm each item has title, description, and sources.\n"
     "  - Confirm every source has title and url.\n"
-    "  - Confirm every item is supported by searched/cited sources from the last 14 days.\n\n"
+    "  - Confirm every item is supported by searched/cited sources from the last 7 days.\n\n"
     "Return ONLY the JSON object. No preamble, no explanation, no markdown fences."
 )
 
@@ -242,21 +241,21 @@ def _call_category(category: dict, today_utc: datetime) -> tuple[dict, object]:
 
 @observe(name="ai-radar:generate", as_type="generation")
 def _call_ai_radar(today_utc: datetime) -> tuple[dict, object]:
-    """Generate the full AI radar payload using parallel category-specific requests."""
-    categories_by_key: dict[str, dict] = {}
+    """Generate the full AI radar payload using smaller sequential category requests."""
+    categories: list[dict] = []
     total_input = 0
     total_output = 0
 
-    with ThreadPoolExecutor(max_workers=len(CATEGORY_SPECS)) as executor:
-        for result, usage in executor.map(lambda spec: _call_category(spec, today_utc), CATEGORY_SPECS):
-            categories_by_key[result["key"]] = result
-            total_input += getattr(usage, "input_tokens", 0) or 0
-            total_output += getattr(usage, "output_tokens", 0) or 0
+    for spec in CATEGORY_SPECS:
+        result, usage = _call_category(spec, today_utc)
+        categories.append(result)
+        total_input += getattr(usage, "input_tokens", 0) or 0
+        total_output += getattr(usage, "output_tokens", 0) or 0
 
     usage_details = {"input": total_input, "output": total_output}
     _langfuse_client().update_current_generation(model=AI_RADAR_MODEL, usage_details=usage_details)
 
-    payload = _normalize_payload([categories_by_key[spec["key"]] for spec in CATEGORY_SPECS])
+    payload = _normalize_payload(categories)
     combined_usage = types.SimpleNamespace(input_tokens=total_input, output_tokens=total_output)
     return payload, combined_usage
 

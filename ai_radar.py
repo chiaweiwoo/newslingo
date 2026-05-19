@@ -11,6 +11,9 @@ Non-fatal: any failure is logged and the job exits 0.
 import json
 import os
 import sys
+import time
+import types
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
 import anthropic
@@ -34,30 +37,51 @@ claude = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=180.0)
 
 AI_RADAR_MODEL = "claude-sonnet-4-6"
 LOOKBACK_DAYS = 14
+WEB_SEARCH_MAX_USES = 3
+AI_RADAR_MAX_TOKENS = 1400
+RATE_LIMIT_RETRIES = 3
+RATE_LIMIT_SLEEP_SECONDS = 20
 WEB_SEARCH_TOOL = {
     "type": "web_search_20260209",
     "name": "web_search",
-    "max_uses": 8,
+    "max_uses": WEB_SEARCH_MAX_USES,
 }
+
+CATEGORY_SPECS = [
+    {
+        "key": "governance",
+        "title": "AI Governance Radar",
+        "focus": (
+            "AI incidents, harmful behavior, failures, lawsuits, copyright disputes, "
+            "enforcement, policy, regulation, operational breakdowns, and public backlash."
+        ),
+    },
+    {
+        "key": "product",
+        "title": "AI Product Radar",
+        "focus": (
+            "Major launches, feature releases, agents, copilots, product strategy shifts, "
+            "enterprise workflow changes, adoption signals, and meaningful UX improvements."
+        ),
+    },
+    {
+        "key": "infrastructure",
+        "title": "AI Infrastructure Radar",
+        "focus": (
+            "GPUs, AI chips, datacenters, cloud AI capacity, inference optimization, compute shortages, "
+            "energy and cooling issues, and efficiency breakthroughs."
+        ),
+    },
+]
 
 AI_RADAR_SYSTEM_PROMPT = (
     "You are a senior AI radar analyst preparing a concise briefing for busy professionals.\n"
     "Your job is to extract the most important AI developments from the last 14 days using web search.\n\n"
+    "You will handle exactly ONE category per request, specified in the user message.\n\n"
     "WINDOW:\n"
     "  - Include only developments from the last 14 days relative to the current date.\n"
     "  - If a development falls outside the window, exclude it.\n"
     "  - Use searched and cited sources only. Do not rely on background knowledge alone.\n\n"
-    "CATEGORIES:\n"
-    '  - governance -> "AI Governance Radar"\n'
-    '  - product -> "AI Product Radar"\n'
-    '  - infrastructure -> "AI Infrastructure Radar"\n\n'
-    "CATEGORY DEFINITIONS:\n"
-    "  governance: AI incidents, harmful behavior, failures, lawsuits, copyright disputes,\n"
-    "              enforcement, policy, regulation, operational breakdowns, public backlash\n"
-    "  product: major launches, feature releases, agents, copilots, product strategy shifts,\n"
-    "           enterprise workflow changes, strong adoption signals, meaningful UX improvements\n"
-    "  infrastructure: GPUs, AI chips, datacenters, cloud AI capacity, inference optimization,\n"
-    "                  compute shortages, energy and cooling issues, efficiency breakthroughs\n\n"
     "SELECTION STANDARD:\n"
     "  - Include as many items as pass the importance bar. Do not force an exact count.\n"
     "  - Prefer strategic, operational, financial, political, legal, or social significance.\n"
@@ -72,23 +96,17 @@ AI_RADAR_SYSTEM_PROMPT = (
     "  - Use reputable primary or strong reporting sources when available.\n\n"
     "OUTPUT FORMAT:\n"
     "{\n"
-    '  "categories": [\n'
+    '  "items": [\n'
     "    {\n"
-    '      "key": "governance" | "product" | "infrastructure",\n'
-    '      "title": "AI Governance Radar" | "AI Product Radar" | "AI Infrastructure Radar",\n'
-    '      "items": [\n'
-    "        {\n"
-    '          "title": "Short title",\n'
-    '          "description": "One concise explanation.",\n'
-    '          "sources": [{"title": "Source title", "url": "https://example.com"}]\n'
-    "        }\n"
-    "      ]\n"
+    '      "title": "Short title",\n'
+    '      "description": "One concise explanation.",\n'
+    '      "sources": [{"title": "Source title", "url": "https://example.com"}]\n'
     "    }\n"
     "  ]\n"
     "}\n\n"
     "REQUIRED SHAPE:\n"
-    "  - Return all three categories in this order: governance, product, infrastructure.\n"
-    "  - If a category has no qualifying items, return an empty items array for that category.\n"
+    "  - Return exactly one JSON object with one top-level key: items.\n"
+    "  - If the category has no qualifying items, return an empty items array.\n"
     "  - Return only valid JSON.\n\n"
     "FACTUAL DISCIPLINE:\n"
     "  - Do not invent company actions, product details, legal outcomes, or infrastructure numbers.\n"
@@ -108,9 +126,9 @@ AI_RADAR_SYSTEM_PROMPT = (
     "  - This is a news briefing, not legal, policy, investment, or engineering advice.\n"
     "  - Summarize only what the sourced reporting supports; do not imply certainty beyond those reports.\n\n"
     "LANGUAGE:\n"
-    "  - Write all category titles, item titles, descriptions, and source titles in English only.\n\n"
+    "  - Write all item titles, descriptions, and source titles in English only.\n\n"
     "SELF-CHECK BEFORE RETURNING:\n"
-    "  - Confirm the response is valid JSON and contains exactly three category objects.\n"
+    "  - Confirm the response is valid JSON with exactly one top-level key: items.\n"
     "  - Confirm each item has title, description, and sources.\n"
     "  - Confirm every source has title and url.\n"
     "  - Confirm every item is supported by searched/cited sources from the last 14 days.\n\n"
@@ -136,45 +154,27 @@ def _assistant_text(message: object) -> str:
     return "\n".join(parts).strip()
 
 
-def _parse_payload(body: str) -> dict:
-    """Parse the JSON payload from Claude output."""
+def _parse_items_payload(body: str) -> dict:
+    """Parse a JSON object with an items list from Claude output."""
     extracted = _extract_json_object(body)
     if extracted:
         try:
             parsed = json.loads(extracted)
-            if isinstance(parsed, dict) and isinstance(parsed.get("categories"), list):
+            if isinstance(parsed, dict) and isinstance(parsed.get("items"), list):
                 return parsed
         except json.JSONDecodeError:
             pass
     raise ValueError(f"[ai-radar] failed to parse JSON. Body (first 400): {body[:400]!r}")
 
 
-def _normalize_payload(payload: dict) -> dict:
+def _normalize_items(payload: dict) -> list[dict]:
+    items = payload.get("items")
+    return items if isinstance(items, list) else []
+
+
+def _normalize_payload(categories: list[dict]) -> dict:
     """Guarantee all three categories exist in the expected order."""
-    canonical = {
-        "governance": "AI Governance Radar",
-        "product": "AI Product Radar",
-        "infrastructure": "AI Infrastructure Radar",
-    }
-
-    seen: dict[str, dict] = {}
-    for category in payload.get("categories", []):
-        key = category.get("key")
-        if key not in canonical:
-            continue
-        items = category.get("items")
-        seen[key] = {
-            "key": key,
-            "title": canonical[key],
-            "items": items if isinstance(items, list) else [],
-        }
-
-    return {
-        "categories": [
-            seen.get(key, {"key": key, "title": title, "items": []})
-            for key, title in canonical.items()
-        ]
-    }
+    return {"categories": categories}
 
 
 def _usage_details(message: object) -> dict[str, int]:
@@ -185,42 +185,80 @@ def _usage_details(message: object) -> dict[str, int]:
     }
 
 
-@observe(name="ai-radar:generate", as_type="generation")
-def _call_ai_radar(today_utc: datetime) -> tuple[dict, object]:
-    """Generate the AI radar payload using Claude web search."""
+def _is_rate_limit_error(exc: Exception) -> bool:
+    return "rate_limit_error" in str(exc) or "429" in str(exc)
+
+
+def _call_category(category: dict, today_utc: datetime) -> tuple[dict, object]:
+    """Generate one AI radar category using a smaller, lower-risk web-search request."""
     today_label = today_utc.date().isoformat()
     user_prompt = (
         f"Today's UTC date is {today_label}.\n"
-        f"Search the web and compile the AI Radar for the last {LOOKBACK_DAYS} days.\n"
-        "Return the JSON object only."
+        f"Search the web and compile {category['title']} for the last {LOOKBACK_DAYS} days.\n"
+        f"Focus only on this category: {category['focus']}\n"
+        "Use a small number of high-value searches and return the JSON object only."
     )
 
-    msg = claude.messages.create(
-        model=AI_RADAR_MODEL,
-        max_tokens=5000,
-        system=AI_RADAR_SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_prompt}],
-        tools=[WEB_SEARCH_TOOL],
-    )
+    for attempt in range(1, RATE_LIMIT_RETRIES + 1):
+        try:
+            msg = claude.messages.create(
+                model=AI_RADAR_MODEL,
+                max_tokens=AI_RADAR_MAX_TOKENS,
+                system=AI_RADAR_SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": user_prompt}],
+                tools=[WEB_SEARCH_TOOL],
+            )
 
-    # Handle the rare pause_turn path by continuing the same conversation.
-    while getattr(msg, "stop_reason", None) == "pause_turn":
-        msg = claude.messages.create(
-            model=AI_RADAR_MODEL,
-            max_tokens=5000,
-            system=AI_RADAR_SYSTEM_PROMPT,
-            messages=[
-                {"role": "user", "content": user_prompt},
-                {"role": "assistant", "content": msg.content},
-            ],
-            tools=[WEB_SEARCH_TOOL],
-        )
+            while getattr(msg, "stop_reason", None) == "pause_turn":
+                msg = claude.messages.create(
+                    model=AI_RADAR_MODEL,
+                    max_tokens=AI_RADAR_MAX_TOKENS,
+                    system=AI_RADAR_SYSTEM_PROMPT,
+                    messages=[
+                        {"role": "user", "content": user_prompt},
+                        {"role": "assistant", "content": msg.content},
+                    ],
+                    tools=[WEB_SEARCH_TOOL],
+                )
+            items = _normalize_items(_parse_items_payload(_assistant_text(msg)))
+            return {
+                "key": category["key"],
+                "title": category["title"],
+                "items": items,
+            }, msg.usage
+        except Exception as exc:
+            if not _is_rate_limit_error(exc) or attempt == RATE_LIMIT_RETRIES:
+                raise
+            sleep_for = RATE_LIMIT_SLEEP_SECONDS * attempt
+            print(
+                f"[ai-radar] rate limited during {category['key']} attempt {attempt}/{RATE_LIMIT_RETRIES}; "
+                f"sleeping {sleep_for}s",
+                flush=True,
+            )
+            time.sleep(sleep_for)
 
-    usage_details = _usage_details(msg)
+    raise RuntimeError(f"[ai-radar] exhausted retries for {category['key']}")
+
+
+@observe(name="ai-radar:generate", as_type="generation")
+def _call_ai_radar(today_utc: datetime) -> tuple[dict, object]:
+    """Generate the full AI radar payload using parallel category-specific requests."""
+    categories_by_key: dict[str, dict] = {}
+    total_input = 0
+    total_output = 0
+
+    with ThreadPoolExecutor(max_workers=len(CATEGORY_SPECS)) as executor:
+        for result, usage in executor.map(lambda spec: _call_category(spec, today_utc), CATEGORY_SPECS):
+            categories_by_key[result["key"]] = result
+            total_input += getattr(usage, "input_tokens", 0) or 0
+            total_output += getattr(usage, "output_tokens", 0) or 0
+
+    usage_details = {"input": total_input, "output": total_output}
     _langfuse_client().update_current_generation(model=AI_RADAR_MODEL, usage_details=usage_details)
 
-    payload = _normalize_payload(_parse_payload(_assistant_text(msg)))
-    return payload, msg.usage
+    payload = _normalize_payload([categories_by_key[spec["key"]] for spec in CATEGORY_SPECS])
+    combined_usage = types.SimpleNamespace(input_tokens=total_input, output_tokens=total_output)
+    return payload, combined_usage
 
 
 def _load_previous_radar() -> dict | None:

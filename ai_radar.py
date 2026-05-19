@@ -35,6 +35,7 @@ supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 claude = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=180.0)
 
 AI_RADAR_MODEL = "claude-3-5-haiku-20241022"
+AI_RADAR_FALLBACK_MODEL = "claude-sonnet-4-6"
 LOOKBACK_DAYS = 7
 WEB_SEARCH_MAX_USES = 2
 AI_RADAR_MAX_TOKENS = 1000
@@ -188,7 +189,11 @@ def _is_rate_limit_error(exc: Exception) -> bool:
     return "rate_limit_error" in str(exc) or "429" in str(exc)
 
 
-def _call_category(category: dict, today_utc: datetime) -> tuple[dict, object]:
+def _is_model_not_found_error(exc: Exception) -> bool:
+    return "not_found_error" in str(exc) or "model:" in str(exc)
+
+
+def _call_category(category: dict, today_utc: datetime, model: str) -> tuple[dict, object]:
     """Generate one AI radar category using a smaller, lower-risk web-search request."""
     today_label = today_utc.date().isoformat()
     user_prompt = (
@@ -201,7 +206,7 @@ def _call_category(category: dict, today_utc: datetime) -> tuple[dict, object]:
     for attempt in range(1, RATE_LIMIT_RETRIES + 1):
         try:
             msg = claude.messages.create(
-                model=AI_RADAR_MODEL,
+                model=model,
                 max_tokens=AI_RADAR_MAX_TOKENS,
                 system=AI_RADAR_SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": user_prompt}],
@@ -210,7 +215,7 @@ def _call_category(category: dict, today_utc: datetime) -> tuple[dict, object]:
 
             while getattr(msg, "stop_reason", None) == "pause_turn":
                 msg = claude.messages.create(
-                    model=AI_RADAR_MODEL,
+                    model=model,
                     max_tokens=AI_RADAR_MAX_TOKENS,
                     system=AI_RADAR_SYSTEM_PROMPT,
                     messages=[
@@ -246,14 +251,35 @@ def _call_ai_radar(today_utc: datetime) -> tuple[dict, object]:
     total_input = 0
     total_output = 0
 
-    for spec in CATEGORY_SPECS:
-        result, usage = _call_category(spec, today_utc)
-        categories.append(result)
-        total_input += getattr(usage, "input_tokens", 0) or 0
-        total_output += getattr(usage, "output_tokens", 0) or 0
+    model_in_use = AI_RADAR_MODEL
+
+    try:
+        for spec in CATEGORY_SPECS:
+            result, usage = _call_category(spec, today_utc, model_in_use)
+            categories.append(result)
+            total_input += getattr(usage, "input_tokens", 0) or 0
+            total_output += getattr(usage, "output_tokens", 0) or 0
+    except Exception as exc:
+        if not _is_model_not_found_error(exc):
+            raise
+
+        print(
+            f"[ai-radar] primary model {AI_RADAR_MODEL} unavailable; falling back to {AI_RADAR_FALLBACK_MODEL}",
+            flush=True,
+        )
+        model_in_use = AI_RADAR_FALLBACK_MODEL
+        categories = []
+        total_input = 0
+        total_output = 0
+
+        for spec in CATEGORY_SPECS:
+            result, usage = _call_category(spec, today_utc, model_in_use)
+            categories.append(result)
+            total_input += getattr(usage, "input_tokens", 0) or 0
+            total_output += getattr(usage, "output_tokens", 0) or 0
 
     usage_details = {"input": total_input, "output": total_output}
-    _langfuse_client().update_current_generation(model=AI_RADAR_MODEL, usage_details=usage_details)
+    _langfuse_client().update_current_generation(model=model_in_use, usage_details=usage_details)
 
     payload = _normalize_payload(categories)
     combined_usage = types.SimpleNamespace(input_tokens=total_input, output_tokens=total_output)

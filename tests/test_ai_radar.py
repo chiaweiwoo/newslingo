@@ -35,6 +35,7 @@ class TestModelAndToolConfig:
     def test_model_is_web_search_compatible_haiku(self):
         assert ai_radar.AI_RADAR_MODEL == "claude-3-5-haiku-20241022"
         assert "haiku" in ai_radar.AI_RADAR_MODEL.lower()
+        assert ai_radar.AI_RADAR_FALLBACK_MODEL == "claude-sonnet-4-6"
 
     def test_web_search_tool_is_configured(self):
         tool = ai_radar.WEB_SEARCH_TOOL
@@ -96,7 +97,7 @@ class TestCallAiRadar:
             json.dumps({"items": []})
         )
 
-        ai_radar._call_category(ai_radar.CATEGORY_SPECS[0], datetime(2026, 5, 19, tzinfo=timezone.utc))
+        ai_radar._call_category(ai_radar.CATEGORY_SPECS[0], datetime(2026, 5, 19, tzinfo=timezone.utc), ai_radar.AI_RADAR_MODEL)
 
         kwargs = ai_radar.claude.messages.create.call_args.kwargs
         assert kwargs["model"] == ai_radar.AI_RADAR_MODEL
@@ -109,7 +110,7 @@ class TestCallAiRadar:
         second = _make_claude_response(json.dumps({"items": []}))
         ai_radar.claude.messages.create.side_effect = [first, second]
 
-        ai_radar._call_category(ai_radar.CATEGORY_SPECS[0], datetime(2026, 5, 19, tzinfo=timezone.utc))
+        ai_radar._call_category(ai_radar.CATEGORY_SPECS[0], datetime(2026, 5, 19, tzinfo=timezone.utc), ai_radar.AI_RADAR_MODEL)
 
         assert ai_radar.claude.messages.create.call_count == 2
         second_call = ai_radar.claude.messages.create.call_args_list[1].kwargs
@@ -148,10 +149,36 @@ class TestCallAiRadar:
         ]
 
         with patch("ai_radar.time.sleep") as sleep:
-            result, _usage = ai_radar._call_category(ai_radar.CATEGORY_SPECS[0], datetime(2026, 5, 19, tzinfo=timezone.utc))
+            result, _usage = ai_radar._call_category(ai_radar.CATEGORY_SPECS[0], datetime(2026, 5, 19, tzinfo=timezone.utc), ai_radar.AI_RADAR_MODEL)
 
         assert result["key"] == "governance"
         sleep.assert_called_once()
+
+    def test_call_ai_radar_falls_back_when_model_missing(self):
+        with patch.object(
+            ai_radar,
+            "_call_category",
+            side_effect=[
+                Exception("404 not_found_error model: claude-3-5-haiku-20241022"),
+                (
+                    {"key": "governance", "title": "AI Governance Radar", "items": []},
+                    types.SimpleNamespace(input_tokens=10, output_tokens=5),
+                ),
+                (
+                    {"key": "product", "title": "AI Product Radar", "items": []},
+                    types.SimpleNamespace(input_tokens=10, output_tokens=5),
+                ),
+                (
+                    {"key": "infrastructure", "title": "AI Infrastructure Radar", "items": []},
+                    types.SimpleNamespace(input_tokens=10, output_tokens=5),
+                ),
+            ],
+        ):
+            payload, usage = ai_radar._call_ai_radar(datetime(2026, 5, 19, tzinfo=timezone.utc))
+
+        assert [category["key"] for category in payload["categories"]] == ["governance", "product", "infrastructure"]
+        assert usage.input_tokens == 30
+        assert usage.output_tokens == 15
 
 
 class TestRotation:

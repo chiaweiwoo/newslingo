@@ -34,7 +34,7 @@ os.environ.setdefault("LANGFUSE_HOST", os.getenv("LANGFUSE_BASE_URL", "https://c
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 claude = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=180.0)
 
-AI_RADAR_MODEL = "claude-3-5-haiku-latest"
+AI_RADAR_MODEL = "claude-3-5-haiku-20241022"
 LOOKBACK_DAYS = 7
 WEB_SEARCH_MAX_USES = 2
 AI_RADAR_MAX_TOKENS = 1000

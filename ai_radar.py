@@ -39,7 +39,7 @@ AI_RADAR_MODEL = "claude-haiku-4-5"
 AI_RADAR_FALLBACK_MODEL = "claude-sonnet-4-6"
 LOOKBACK_DAYS = 7
 WEB_SEARCH_MAX_USES = 2
-AI_RADAR_MAX_TOKENS = 1000
+AI_RADAR_MAX_TOKENS = 1400
 RATE_LIMIT_RETRIES = 3
 RATE_LIMIT_SLEEP_SECONDS = 20
 WEB_SEARCH_TOOL = {
@@ -85,15 +85,18 @@ AI_RADAR_SYSTEM_PROMPT = (
     "  - If a development falls outside the window, exclude it.\n"
     "  - Use searched and cited sources only. Do not rely on background knowledge alone.\n\n"
     "SELECTION STANDARD:\n"
-    "  - Include as many items as pass the importance bar. Do not force an exact count.\n"
+    "  - Include only the strongest items that pass the importance bar.\n"
     "  - Prefer strategic, operational, financial, political, legal, or social significance.\n"
     "  - Prefer concrete real-world impact over hype or speculation.\n"
     "  - Avoid duplicates, incremental minor updates, and repetitive follow-ons.\n"
     "  - If two stories are materially the same development, merge them into one stronger item.\n\n"
+    "OUTPUT SIZE:\n"
+    "  - Return 1 to 3 items when qualifying developments exist.\n"
+    "  - Return an empty items array if nothing is strong enough.\n\n"
     "ITEM RULES:\n"
     "  - title: short English title, no hype, no date\n"
     "  - description: one concise English sentence, information-dense, no date, no bullet prefix\n"
-    "  - sources: 1 to 3 source objects pulled from the searched/cited material\n"
+    "  - sources: exactly 1 source object pulled from the searched/cited material\n"
     "  - Each source object must contain exactly: title, url\n"
     "  - Use reputable primary or strong reporting sources when available.\n\n"
     "OUTPUT FORMAT:\n"
@@ -109,6 +112,7 @@ AI_RADAR_SYSTEM_PROMPT = (
     "REQUIRED SHAPE:\n"
     "  - Return exactly one JSON object with one top-level key: items.\n"
     "  - If the category has no qualifying items, return an empty items array.\n"
+    "  - Do not include inline citation markup such as <cite ...>...</cite> anywhere in the JSON.\n"
     "  - Return only valid JSON.\n\n"
     "FACTUAL DISCIPLINE:\n"
     "  - Do not invent company actions, product details, legal outcomes, or infrastructure numbers.\n"
@@ -210,7 +214,8 @@ def _call_category(category: dict, today_utc: datetime, model: str) -> tuple[dic
         f"Today's UTC date is {today_label}.\n"
         f"Search the web and compile {category['title']} for the last {LOOKBACK_DAYS} days.\n"
         f"Focus only on this category: {category['focus']}\n"
-        "Use a small number of high-value searches and return the JSON object only."
+        "Use a small number of high-value searches. Return at most 3 items, exactly 1 source per item, "
+        "and no inline citation tags. Return the JSON object only."
     )
 
     for attempt in range(1, RATE_LIMIT_RETRIES + 1):

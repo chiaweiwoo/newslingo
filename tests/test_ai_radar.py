@@ -46,8 +46,8 @@ class TestModelAndToolConfig:
 
     def test_category_calls_use_smaller_budgets(self):
         assert ai_radar.LOOKBACK_DAYS == 7
-        assert ai_radar.WEB_SEARCH_MAX_USES == 2
-        assert ai_radar.AI_RADAR_MAX_TOKENS == 1400
+        assert ai_radar.WEB_SEARCH_MAX_USES == 3
+        assert ai_radar.AI_RADAR_MAX_TOKENS == 1800
 
 
 class TestPromptContract:
@@ -60,9 +60,9 @@ class TestPromptContract:
         prompt = ai_radar.AI_RADAR_SYSTEM_PROMPT
         assert '"sources"' in prompt
         assert "SELF-CHECK" in prompt
-        assert "exactly 1 source object" in prompt
+        assert "1 to 2 source objects" in prompt
         assert "Do not include inline citation markup" in prompt
-        assert "10 to 16 words" in prompt
+        assert "8 to 14 words" in prompt
 
     def test_contains_three_category_keys(self):
         keys = [spec["key"] for spec in ai_radar.CATEGORY_SPECS]

@@ -38,8 +38,8 @@ claude = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=180.0)
 AI_RADAR_MODEL = "claude-haiku-4-5"
 AI_RADAR_FALLBACK_MODEL = "claude-sonnet-4-6"
 LOOKBACK_DAYS = 7
-WEB_SEARCH_MAX_USES = 2
-AI_RADAR_MAX_TOKENS = 1400
+WEB_SEARCH_MAX_USES = 3
+AI_RADAR_MAX_TOKENS = 1800
 RATE_LIMIT_RETRIES = 3
 RATE_LIMIT_SLEEP_SECONDS = 20
 WEB_SEARCH_TOOL = {
@@ -85,20 +85,21 @@ AI_RADAR_SYSTEM_PROMPT = (
     "  - If a development falls outside the window, exclude it.\n"
     "  - Use searched and cited sources only. Do not rely on background knowledge alone.\n\n"
     "SELECTION STANDARD:\n"
-    "  - Include only the strongest items that pass the importance bar.\n"
+    "  - Include all materially important items that pass the bar, not just a single top story.\n"
     "  - Prefer strategic, operational, financial, political, legal, or social significance.\n"
     "  - Prefer concrete real-world impact over hype or speculation.\n"
     "  - Avoid duplicates, incremental minor updates, and repetitive follow-ons.\n"
     "  - If two stories are materially the same development, merge them into one stronger item.\n\n"
     "OUTPUT SIZE:\n"
-    "  - Return 1 to 3 items when qualifying developments exist.\n"
-    "  - Return an empty items array if nothing is strong enough.\n\n"
+    "  - Return 3 to 5 items when the category has enough qualifying developments.\n"
+    "  - Return fewer only when the last 7 days genuinely do not support more.\n"
+    "  - Return an empty items array only if the category is truly quiet after searching.\n\n"
     "ITEM RULES:\n"
     "  - title: short English title, no hype, no date\n"
-    "  - description: one very concise English sentence, about 10 to 16 words, information-dense, no date, no bullet prefix\n"
-    "  - sources: exactly 1 source object pulled from the searched/cited material\n"
+    "  - description: one very concise English sentence, about 8 to 14 words, information-dense, no date, no bullet prefix\n"
+    "  - sources: 1 to 2 source objects pulled from the searched/cited material\n"
     "  - Each source object must contain exactly: title, url\n"
-    "  - Use reputable primary or strong reporting sources when available.\n\n"
+    "  - Prefer primary sources first; use strong reporting sources when primary sources are unavailable or incomplete.\n\n"
     "OUTPUT FORMAT:\n"
     "{\n"
     '  "items": [\n'
@@ -125,8 +126,8 @@ AI_RADAR_SYSTEM_PROMPT = (
     "such as 'reportedly' or 'according to reports'.\n"
     "  - If you cannot support the core claim from searched and cited sources, omit the item entirely.\n\n"
     "ESCALATION RULE:\n"
-    "  - If you cannot verify enough meaningful items for a category, return an empty items array for that "
-    "category rather than guessing.\n"
+    "  - If you cannot verify enough meaningful items for a category, return fewer items rather than guessing.\n"
+    "  - Return an empty items array only if you genuinely cannot find even one strong, sourced item in the last 7 days.\n"
     "  - If a source link is missing or unreliable, exclude that item rather than fabricating a citation.\n\n"
     "SCOPE BOUNDARY:\n"
     "  - This is a news briefing, not legal, policy, investment, or engineering advice.\n"
@@ -214,8 +215,8 @@ def _call_category(category: dict, today_utc: datetime, model: str) -> tuple[dic
         f"Today's UTC date is {today_label}.\n"
         f"Search the web and compile {category['title']} for the last {LOOKBACK_DAYS} days.\n"
         f"Focus only on this category: {category['focus']}\n"
-        "Use a small number of high-value searches. Return at most 3 items, exactly 1 source per item, "
-        "and no inline citation tags. Return the JSON object only."
+        "Use a small number of high-value searches. Return 3 to 5 items when possible, 1 to 2 sources per item, "
+        "and no inline citation tags. Prefer primary sources. Return the JSON object only."
     )
 
     for attempt in range(1, RATE_LIMIT_RETRIES + 1):

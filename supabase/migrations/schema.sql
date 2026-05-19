@@ -89,6 +89,17 @@ CREATE INDEX IF NOT EXISTS idx_weekly_summary_active ON public.weekly_summary (a
 
 -- ── visits ────────────────────────────────────────────────────────────────────
 
+CREATE TABLE IF NOT EXISTS public.ai_radar (
+    id           UUID        DEFAULT gen_random_uuid() PRIMARY KEY,
+    created_at   TIMESTAMPTZ DEFAULT now() NOT NULL,
+    window_start DATE        NOT NULL,
+    window_end   DATE        NOT NULL,
+    payload      JSONB       NOT NULL,
+    active       BOOLEAN     DEFAULT true NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_radar_active ON public.ai_radar (active, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS public.visits (
     id         BIGSERIAL   PRIMARY KEY,
     visited_at TIMESTAMPTZ DEFAULT now(),
@@ -110,6 +121,7 @@ ALTER TABLE public.assessment_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.prompt_rules    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.learning_digest ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.weekly_summary  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ai_radar        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.visits          ENABLE ROW LEVEL SECURITY;
 
 -- headlines — public read
@@ -138,6 +150,9 @@ CREATE POLICY "weekly_summary_anon_select"
 
 -- visits — anon may insert (visit tracking) and select (Traffic drawer)
 -- Note: raw IPs are readable via anon key — acceptable for a personal project.
+CREATE POLICY "ai_radar_anon_select"
+  ON public.ai_radar FOR SELECT TO anon USING (true);
+
 CREATE POLICY "visits_anon_insert"
   ON public.visits FOR INSERT TO anon WITH CHECK (true);
 

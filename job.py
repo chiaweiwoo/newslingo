@@ -287,12 +287,15 @@ DISTILL_SYSTEM_PROMPT = (
     "If fewer than 3 failures are provided, return an empty array [] — "
     "do not fabricate patterns from insufficient data.\n\n"
 
+    "If the provided failures do not support a rule with confidence, omit that rule rather than guessing.\n\n"
+
     "Before returning, verify each rule can be traced back to at least one failure in the input. "
     "Remove any rule you cannot justify from the provided data.\n\n"
 
     "Return rules in English only.\n"
     "Return ONLY a JSON array of rule strings:\n"
     "[\"rule 1\", \"rule 2\", ...]\n"
+    "No preamble, no explanation, no markdown fences.\n"
 )
 
 

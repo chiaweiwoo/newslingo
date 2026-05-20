@@ -605,12 +605,13 @@ def _store_summary(now: datetime, payload: dict, previous: dict | None) -> None:
 
     supabase.table("weekly_summary").insert(
         {
-            "window_start": (now - timedelta(days=LOOKBACK_DAYS)).date().isoformat(),
-            "window_end": now.date().isoformat(),
+            "week_start": (now - timedelta(days=LOOKBACK_DAYS)).date().isoformat(),
+            "week_end": now.date().isoformat(),
             "payload": payload,
             "active": True,
         }
     ).execute()
+
 
 
 def _main() -> None:

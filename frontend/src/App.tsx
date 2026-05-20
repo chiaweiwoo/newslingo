@@ -1,7 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   Box, Flex, Heading, Link, Spinner, Text, VStack, Divider, HStack, Center,
-  useDisclosure, useColorMode, Image,
+  useDisclosure, useColorMode,
   Menu, MenuButton, MenuDivider, MenuGroup, MenuList, MenuItem,
 } from '@chakra-ui/react';
 import { useFontSize } from './contexts/FontSizeContext';
@@ -13,8 +13,8 @@ import QuizDrawer from './components/QuizDrawer';
 import SearchBar from './components/SearchBar';
 import StatsDrawer from './components/StatsDrawer';
 import DigestPreviewPage from './components/DigestPreviewDrawer';
+import HeaderBrandMark from './components/HeaderBrandMark';
 import ThisWeekDrawer from './components/ThisWeekDrawer';
-import newslingoCompassIcon from './assets/newslingo-compass-icon.svg';
 
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
@@ -222,9 +222,7 @@ function MainApp() {
           ) : (
           <Flex align="center" justify="space-between" pt={3} pb={2}>
             <HStack spacing={2.5} align="center">
-              <Image
-                src={newslingoCompassIcon}
-                alt="NewsLingo"
+              <HeaderBrandMark
                 boxSize="30px"
                 flexShrink={0}
               />

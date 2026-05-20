@@ -44,7 +44,7 @@ deepseek = anthropic.Anthropic(
     timeout=120.0,
 )
 
-SUMMARY_DISCOVERY_MODEL = "gemini-2.5-flash-lite"
+SUMMARY_DISCOVERY_MODEL = "gemini-3.5-flash"
 SUMMARY_MODEL = "gemini-3.5-flash"
 SUMMARY_TRANSLATION_MODEL = "deepseek-v4-flash"
 LOOKBACK_DAYS = 7

@@ -17,8 +17,8 @@ NewsLingo aggregates bilingual Chinese + English news from two sources:
 Current provider split:
 - `deepseek-v4-flash` - headline translation and EN->ZH summary translation
 - `deepseek-v4-pro` - translation assessment and rule distillation
-- `gemini-2.5-flash-lite` - search-heavy discovery work
-- `gemini-3.5-flash` - final Top Stories selection
+- `gemini-3.5-flash` - Top Stories discovery and final selection
+- `gemini-2.5-flash-lite` - AI summary grounded discovery
 
 Storage is in Supabase. LLM observability is handled by Langfuse Cloud.
 
@@ -168,7 +168,7 @@ Key constants:
 
 ### Top Stories engine (`summary_top_stories.py`)
 
-- uses `gemini-2.5-flash-lite` for 3 grounded discovery calls:
+- uses `gemini-3.5-flash` for 3 grounded discovery calls:
   - `International`
   - `Singapore`
   - `Malaysia`

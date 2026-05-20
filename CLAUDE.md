@@ -94,17 +94,12 @@ which returns HTTP 400 if the conversation ends with an assistant turn.
 - **Never** change `assess_translations` / `_distill_rules` to `use_prefill=True`
 - JSON output reliability is enforced through strict system prompt instructions instead
 
-### 6. Defensive batch iteration — never iterate results directly
+### 7. Job Observability: Never fail silently
 
-```python
-# CORRECT — iterate batch (fixed length), index into results safely
-for j, row in enumerate(batch):
-    if j < len(results) and isinstance(results[j], dict):
-        ...
-# WRONG — Claude can return more or fewer items than batch
-for j, result in enumerate(results):
-    row = batch[j]  # IndexError if len(results) > len(batch)
-```
+All job scripts (`feed_ingest.py`, `summary_ai.py`, `summary_top_stories.py`) MUST exit with a non-zero status (typically `sys.exit(1)`) if a fatal error occurs.
+- **Never** catch an exception and exit with 0.
+- **Never** assume that printing an error is sufficient for GitHub Actions.
+- In `feed_ingest.py`, ensure the final `sys.exit(1)` call happens after the `finally` block logs the run status to the database, so the failure is visible both in GitHub and in the internal audit log.
 
 ---
 

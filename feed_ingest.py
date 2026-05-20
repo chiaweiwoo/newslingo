@@ -823,7 +823,10 @@ def _main() -> None:
         status = "error"
         error_msg = str(e)
         print(f"ERROR: {e}", flush=True)
-        raise
+        # We don't re-raise here because we want the finally block to run and log to job_runs,
+        # but we MUST exit with 1 at the very end of _main or here.
+        # Moving sys.exit(1) to after the finally block for cleaner logging.
+        pass
 
     finally:
         duration = round(time.perf_counter() - start_time, 2)
@@ -848,6 +851,9 @@ def _main() -> None:
                     _distill_rules(src, run_count)
                 except Exception as e:
                     print(f"[distill] {src} failed: {e}", flush=True)
+
+    if status == "error":
+        sys.exit(1)
 
 
 

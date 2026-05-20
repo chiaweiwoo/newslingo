@@ -106,17 +106,12 @@ Current code uses:
 
 Do not assume raw `json.loads(response_text)` is sufficient for provider responses.
 
-### 7. Summary jobs stay small and selective
+### 8. Job Observability: Never fail silently
 
-Top Stories and AI Radar are concise overlays, not long analyst memos.
-
-Keep:
-- `LOOKBACK_DAYS = 7`
-- short titles
-- short summaries / descriptions
-- fewer items rather than weak filler
-
-Do not silently expand scope or verbosity without checking the UX impact.
+All job scripts (`feed_ingest.py`, `summary_ai.py`, `summary_top_stories.py`) MUST exit with a non-zero status (typically `sys.exit(1)`) if a fatal error occurs.
+- **Never** catch an exception and exit with 0.
+- **Never** assume that printing an error is sufficient for GitHub Actions.
+- Ensure the Action fails (Red) so it is visible in the GitHub UI.
 
 ---
 

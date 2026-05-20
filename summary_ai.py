@@ -361,13 +361,16 @@ def _call_gemini_json(
     max_output_tokens: int,
     response_schema: dict,
 ) -> tuple[str, types.SimpleNamespace]:
-    config = genai_types.GenerateContentConfig(
-        system_instruction=system_prompt,
-        response_mime_type="application/json",
-        response_schema=response_schema,
-        max_output_tokens=max_output_tokens,
-        tools=[DISCOVERY_TOOL] if use_search else None,
-    )
+    config_kwargs = {
+        "system_instruction": system_prompt,
+        "max_output_tokens": max_output_tokens,
+        "tools": [DISCOVERY_TOOL] if use_search else None,
+    }
+    if not use_search:
+        config_kwargs["response_mime_type"] = "application/json"
+        config_kwargs["response_schema"] = response_schema
+
+    config = genai_types.GenerateContentConfig(**config_kwargs)
     response = gemini.models.generate_content(
         model=model,
         contents=user_prompt,

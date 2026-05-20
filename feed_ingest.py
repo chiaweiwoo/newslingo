@@ -585,13 +585,13 @@ def _call_model(
 
         # If manual parsing failed and this is the last attempt, try DeepSeek repair
         if attempt == 1:
-            print(f"  [llm] manual parsing failed on second attempt, trying DeepSeek repair...", flush=True)
+            print("  [llm] manual parsing failed on second attempt, trying DeepSeek repair...", flush=True)
             repaired = _repair_json_with_deepseek(body)
             if repaired:
                 try:
                     parsed = json.loads(repaired)
                     if isinstance(parsed, list):
-                        print(f"  [llm] DeepSeek repair successful", flush=True)
+                        print("  [llm] DeepSeek repair successful", flush=True)
                         return parsed
                 except json.JSONDecodeError:
                     pass

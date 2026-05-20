@@ -3,8 +3,8 @@ Unit tests for scrapers/astro.py
 
 Key invariants tested:
   1. PlaylistItems API response is correctly converted to row schema.
-  2. category is left None (filled by job.py LLM classification).
-  3. title_en is left None (filled by job.py translation).
+  2. category is left None (filled by feed_ingest.py LLM classification).
+  3. title_en is left None (filled by feed_ingest.py translation).
   4. Title cleaning strips channel suffix and hashtags.
   5. DEFAULT_LOOKBACK_HOURS >= 120 (5 days) for sufficient initial repull coverage.
   6. UPLOADS_PLAYLIST_ID is derived correctly from CHANNEL_ID (UC → UU prefix).
@@ -49,12 +49,12 @@ class TestItemToRow:
         assert "youtube.com/watch" in row["source_url"]
 
     def test_category_is_none(self):
-        # INVARIANT: Astro category is set by the LLM in job.py, never by the scraper
+        # INVARIANT: Astro category is set by the LLM in feed_ingest.py, never by the scraper
         row = _item_to_row(_make_playlist_item())
         assert row["category"] is None
 
     def test_title_en_is_none(self):
-        # translation happens in job.py
+        # translation happens in feed_ingest.py
         row = _item_to_row(_make_playlist_item())
         assert row["title_en"] is None
 

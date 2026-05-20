@@ -34,9 +34,9 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 os.environ.setdefault("LANGFUSE_HOST", os.getenv("LANGFUSE_BASE_URL", "https://cloud.langfuse.com"))
 
 if not DEEPSEEK_API_KEY:
-    raise RuntimeError("DEEPSEEK_API_KEY is required for ai_radar.py")
+    raise RuntimeError("DEEPSEEK_API_KEY is required for summary_ai.py")
 if not GEMINI_API_KEY:
-    raise RuntimeError("GEMINI_API_KEY is required for ai_radar.py")
+    raise RuntimeError("GEMINI_API_KEY is required for summary_ai.py")
 
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 gemini = genai.Client(api_key=GEMINI_API_KEY)

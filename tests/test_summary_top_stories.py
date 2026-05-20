@@ -1,5 +1,5 @@
 """
-Unit tests for weekly_summary.py.
+Unit tests for summary_top_stories.py.
 """
 
 import os
@@ -17,7 +17,7 @@ os.environ.setdefault("GEMINI_API_KEY", "fake-gemini-key")
 with patch("supabase.create_client", return_value=MagicMock()):
     with patch("anthropic.Anthropic", return_value=MagicMock()):
         with patch("google.genai.Client", return_value=MagicMock()):
-            import weekly_summary
+            import summary_top_stories
 
 
 def _usage(input_tokens: int, output_tokens: int):
@@ -26,30 +26,30 @@ def _usage(input_tokens: int, output_tokens: int):
 
 class TestConstants:
     def test_lookback_days_is_7(self):
-        assert weekly_summary.LOOKBACK_DAYS == 7
+        assert summary_top_stories.LOOKBACK_DAYS == 7
 
     def test_models_routed_to_gemini_and_deepseek(self):
-        assert weekly_summary.SUMMARY_DISCOVERY_MODEL == "gemini-3.5-flash"
-        assert weekly_summary.SUMMARY_MODEL == "gemini-3.5-flash"
-        assert weekly_summary.SUMMARY_TRANSLATION_MODEL == "deepseek-v4-flash"
+        assert summary_top_stories.SUMMARY_DISCOVERY_MODEL == "gemini-3.5-flash"
+        assert summary_top_stories.SUMMARY_MODEL == "gemini-3.5-flash"
+        assert summary_top_stories.SUMMARY_TRANSLATION_MODEL == "deepseek-v4-flash"
 
 
 class TestPromptContracts:
     def test_translation_prompt_mentions_required_fields(self):
-        prompt = weekly_summary.CHINESE_TRANSLATION_SYSTEM_PROMPT
+        prompt = summary_top_stories.CHINESE_TRANSLATION_SYSTEM_PROMPT
         assert "Simplified Chinese" in prompt
         assert '"title_zh"' in prompt
         assert '"summary_zh"' in prompt
         assert "Return ONLY the JSON array" in prompt
 
     def test_discovery_prompt_requires_json_only(self):
-        prompt = weekly_summary.DISCOVERY_SYSTEM_PROMPT
+        prompt = summary_top_stories.DISCOVERY_SYSTEM_PROMPT
         assert '"items"' in prompt
         assert "Return ONLY the JSON object" in prompt
         assert "last 7 days" in prompt
 
     def test_selection_prompt_requires_topics_schema(self):
-        prompt = weekly_summary.SELECTION_SYSTEM_PROMPT
+        prompt = summary_top_stories.SELECTION_SYSTEM_PROMPT
         assert '"topics"' in prompt
         assert "8 to 10 total topics" in prompt
         assert "Return ONLY the JSON object" in prompt
@@ -58,7 +58,7 @@ class TestPromptContracts:
 class TestCallSummary:
     def test_call_summary_runs_three_discoveries_then_selects_and_translates(self):
         with patch.object(
-            weekly_summary,
+            summary_top_stories,
             "_discover_region_candidates",
             side_effect=[
                 ([{"title": "A", "summary": "A sum", "region": "International", "theme": "Politics"}], _usage(10, 5)),
@@ -66,14 +66,14 @@ class TestCallSummary:
                 ([{"title": "C", "summary": "C sum", "region": "Malaysia", "theme": "Economy"}], _usage(14, 7)),
             ],
         ) as discover, patch.object(
-            weekly_summary,
+            summary_top_stories,
             "_select_topics",
             return_value=(
                 {"topics": [{"title": "A", "summary": "A sum", "region": "International", "theme": "Politics"}]},
                 _usage(20, 8),
             ),
         ) as select, patch.object(
-            weekly_summary,
+            summary_top_stories,
             "_translate_topics_to_zh",
             return_value=(
                 {
@@ -91,7 +91,7 @@ class TestCallSummary:
                 _usage(9, 4),
             ),
         ) as translate:
-            payload, usage = weekly_summary._call_summary(datetime(2026, 5, 20, tzinfo=timezone.utc))
+            payload, usage = summary_top_stories._call_summary(datetime(2026, 5, 20, tzinfo=timezone.utc))
 
         assert discover.call_count == 3
         select.assert_called_once()
@@ -102,10 +102,10 @@ class TestCallSummary:
 
     def test_extract_json_object_recovers_from_prose(self):
         text = 'Here:\n{"topics": [{"title": "A"}]}\nDone.'
-        assert weekly_summary._extract_json_object(text) == '{"topics": [{"title": "A"}]}'
+        assert summary_top_stories._extract_json_object(text) == '{"topics": [{"title": "A"}]}'
 
     def test_sanitize_topic_rejects_invalid_region(self):
-        assert weekly_summary._sanitize_topic(
+        assert summary_top_stories._sanitize_topic(
             {"title": "A", "summary": "B", "region": "Bad", "theme": "Politics"}
         ) is None
 
@@ -116,16 +116,16 @@ class TestRotation:
         mock_table.update.return_value.eq.return_value.execute.return_value = MagicMock()
         mock_table.insert.return_value.execute.return_value = MagicMock()
 
-        weekly_summary.supabase = MagicMock()
-        weekly_summary.supabase.table.return_value = mock_table
+        summary_top_stories.supabase = MagicMock()
+        summary_top_stories.supabase.table.return_value = mock_table
 
-        weekly_summary._store_summary(
+        summary_top_stories._store_summary(
             datetime(2026, 5, 20, tzinfo=timezone.utc),
             {"topics": []},
             {"id": "old-id"},
         )
 
-        assert weekly_summary.supabase.table.mock_calls == [
+        assert summary_top_stories.supabase.table.mock_calls == [
             call("weekly_summary"),
             call().update({"active": False}),
             call().update().eq("id", "old-id"),

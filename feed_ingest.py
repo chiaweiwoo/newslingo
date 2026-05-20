@@ -29,7 +29,7 @@ YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
 os.environ.setdefault("LANGFUSE_HOST", os.getenv("LANGFUSE_BASE_URL", "https://cloud.langfuse.com"))
 
 if not DEEPSEEK_API_KEY:
-    raise RuntimeError("DEEPSEEK_API_KEY is required for job.py")
+    raise RuntimeError("DEEPSEEK_API_KEY is required for feed_ingest.py")
 
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 deepseek = anthropic.Anthropic(

@@ -3,7 +3,7 @@ Zaobao Singapore news scraper.
 Uses the monthly sitemap for URL discovery + exact timestamps,
 then fetches each article page for og:title and og:image.
 Returns rows matching the headlines DB schema — title_en is left None
-and filled by the caller (job.py).
+and filled by the caller (feed_ingest.py).
 """
 
 import hashlib
@@ -53,7 +53,7 @@ def scrape(since_dt: datetime | None) -> list[dict]:
     """
     Fetch Singapore news articles published after since_dt.
     since_dt=None  → last DEFAULT_LOOKBACK_DAYS days (first / backfill run).
-    Returns list of rows; title_en is None (filled by job.py).
+    Returns list of rows; title_en is None (filled by feed_ingest.py).
     Filters out daily audio briefing rows.
     """
     now = datetime.now(timezone.utc)

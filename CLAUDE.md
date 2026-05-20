@@ -39,10 +39,10 @@ LLM observability (token counts, costs, latency) is handled by **Langfuse Cloud*
 
 Enforced by:
 - `scrapers/zaobao.py` → `_category_from_url(url)` returns `str` for singapore/world, `None` for sea
-- `job.py` → `translate_zaobao(rows, url_prompt, sea_prompt)` splits by `category is None`:
+- `feed_ingest.py` → `translate_zaobao(rows, url_prompt, sea_prompt)` splits by `category is None`:
   - singapore/world rows → `_translate_batch(..., classify=False)` with `ZAOBAO_SYSTEM_PROMPT`
   - sea rows → `_translate_batch(..., classify=True)` with `ZAOBAO_SEA_SYSTEM_PROMPT`
-- `job.py` → `_validate_zaobao_categories()`:
+- `feed_ingest.py` → `_validate_zaobao_categories()`:
   - post-scrape: only fails if a singapore/world row has `category=None` (sea exempt)
   - post-translate: ALL rows including sea must have a category
 - `tests/test_invariants.py` → CI verifies both classify paths exist
@@ -112,7 +112,7 @@ for j, result in enumerate(results):
 
 ```
 GitHub Actions (cron: every 3h)
-  └── job.py
+  └── feed_ingest.py
        ├── scrapers/zaobao.py     → scrape sitemap  → rows (singapore/world: category from URL; sea: category=None)
        ├── scrapers/astro.py      → YouTube API     → rows with category=None (Shorts excluded)
        ├── _translate_batch()     → Claude Sonnet   → fills title_en (+ category for Astro and Zaobao /sea)
@@ -121,7 +121,7 @@ GitHub Actions (cron: every 3h)
        └── upsert_rows()          → Supabase        → headlines table
 
 GitHub Actions (cron: daily 09:00 SGT)
-  └── weekly_summary.py
+  └── summary_top_stories.py
        ├── skips if < MIN_NEW_HEADLINES (30) since last run
        ├── pulls past 7 days of headlines (rolling window)
        ├── _call_summary() pass 1 → Claude Sonnet  → 8-10 must-know topics (title, summary,
@@ -152,7 +152,7 @@ GitHub Actions (cron: daily 09:00 SGT)
 | `assessment_logs` | YES | Per-run quality scores |
 | `prompt_rules` | YES | Distilled LLM rules |
 | `learning_digest` | YES | Unused — was written by digest.py (now deleted). Safe to clear. |
-| `weekly_summary` | YES | Top Stories topics; rotated by weekly_summary.py |
+| `weekly_summary` | YES | Top Stories topics; rotated by summary_top_stories.py |
 | `job_runs` | NO | Audit log — preserve |
 | `visits` | NO | Frontend analytics — preserve |
 | `token_usage` | NO | Legacy — was written by custom pricing.py (now deleted). No longer written; Langfuse handles observability. Safe to ignore. |
@@ -169,7 +169,7 @@ GitHub Actions (cron: daily 09:00 SGT)
 | Top Stories Pass 1 + 2 | `claude-sonnet-4-6` | Generate + fact-check — requires reasoning |
 | Top Stories Pass 3 | `claude-haiku-4-5` | EN→ZH translation — mechanical task, 3× cheaper |
 
-**Model invariant for weekly_summary.py:** `SUMMARY_MODEL` must be Sonnet or Opus (never Haiku). `SUMMARY_HAIKU_MODEL` must be Haiku. Do not swap Haiku into Pass 1 or Pass 2.
+**Model invariant for summary_top_stories.py:** `SUMMARY_MODEL` must be Sonnet or Opus (never Haiku). `SUMMARY_HAIKU_MODEL` must be Haiku. Do not swap Haiku into Pass 1 or Pass 2.
 
 ### Top Stories topic schema
 
@@ -243,7 +243,7 @@ All LLM observability (token counts, cost, latency, and translation quality scor
 - **Dashboard:** cloud.langfuse.com → your project
 - **Secrets:** `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_BASE_URL` in GitHub Actions; `LANGFUSE_BASE_URL` is aliased to `LANGFUSE_HOST` at runtime via `os.environ.setdefault`
 
-### Traces & Generations (job.py)
+### Traces & Generations (feed_ingest.py)
 
 | Trace/Generation name | Type | What it covers |
 |---|---|---|
@@ -258,7 +258,7 @@ All LLM observability (token counts, cost, latency, and translation quality scor
 
 After every `assess_translations()` run, the avg score (1–5 scale) is logged to Langfuse via `score_current_trace(name="translation_quality", ...)`. Visible in **Scores** tab on the dashboard. Use this to track whether distilled rules are improving quality over time.
 
-### Traces & Generations (weekly_summary.py)
+### Traces & Generations (summary_top_stories.py)
 
 `_call_summary` is decorated with `@observe(as_type="generation")`. The 3 individual Claude calls are wrapped as named child observations:
 
@@ -315,10 +315,10 @@ uv run pytest tests/test_invariants.py
 | File | What it covers |
 |---|---|
 | `test_invariants.py` | classify routing (url vs sea), no-prefill invariant, regex scope, Shorts exclusion, sea prompt has classification |
-| `test_call_claude.py` | `_call_claude`, `_extract_json_array`, `_translate_batch`, `_validate_zaobao_categories` |
+| `test_feed_ingest.py` | `_call_claude`, `_extract_json_array`, `_translate_batch`, `_validate_zaobao_categories` |
 | `test_zaobao_scraper.py` | URL→category (incl. sea→None), sitemap regex (singapore/world/sea), china excluded |
 | `test_astro_scraper.py` | Row schema, title cleaning, playlist ID derivation |
-| `test_weekly_summary.py` | LOOKBACK_DAYS/MIN_NEW_HEADLINES constants, Chinese prompt quality, three-pass `_call_summary` (title_zh/summary_zh, 3 Claude calls, token sums, Pass 3 uses Haiku, Pass 1+2 system is list with cache_control, identical headlines block across passes), `_extract_json_object`, model invariants, `_build_content` grouping |
+| `test_summary_top_stories.py` | LOOKBACK_DAYS/MIN_NEW_HEADLINES constants, Chinese prompt quality, three-pass `_call_summary` (title_zh/summary_zh, 3 Claude calls, token sums, Pass 3 uses Haiku, Pass 1+2 system is list with cache_control, identical headlines block across passes), `_extract_json_object`, model invariants, `_build_content` grouping |
 
 CI runs two jobs in parallel on every push: `test` (ruff + pytest) and `build-frontend`
 (catches TS/JSX errors before Vercel).

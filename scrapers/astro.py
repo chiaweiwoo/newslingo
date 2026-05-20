@@ -2,7 +2,7 @@
 Astro 本地圈 (YouTube) scraper.
 Fetches videos from the channel incrementally since a given datetime.
 Returns rows matching the headlines DB schema — title_en and category are
-left None and filled by the caller (job.py).
+left None and filled by the caller (feed_ingest.py).
 
 Uses the PlaylistItems API (uploads playlist) rather than the Search API.
 The Search API has an indexing delay of several hours for newly uploaded
@@ -36,7 +36,7 @@ def scrape(since_dt: datetime | None, youtube_api_key: str) -> list[dict]:
     """
     Fetch YouTube videos published after since_dt.
     since_dt=None  → last DEFAULT_LOOKBACK_HOURS hours (first run).
-    Returns list of rows; title_en and category are None (filled by job.py).
+    Returns list of rows; title_en and category are None (filled by feed_ingest.py).
     Shorts (tagged #Shorts in the title) are excluded — they have no news value.
     """
     if since_dt is None:

@@ -37,9 +37,9 @@ Storage is in Supabase. LLM observability is handled by Langfuse Cloud.
 
 Enforced by:
 - `scrapers/zaobao.py` -> `_category_from_url(url)` returns `None` for sea
-- `job.py` -> `translate_zaobao(...)` routes URL-classified rows with `classify=False`
-- `job.py` -> sea rows go through `_translate_batch(..., classify=True)`
-- `job.py` -> `_validate_zaobao_categories()` checks post-scrape and post-translate states
+- `feed_ingest.py` -> `translate_zaobao(...)` routes URL-classified rows with `classify=False`
+- `feed_ingest.py` -> sea rows go through `_translate_batch(..., classify=True)`
+- `feed_ingest.py` -> `_validate_zaobao_categories()` checks post-scrape and post-translate states
 
 Do not remove `classify=True` for sea rows.
 
@@ -127,7 +127,8 @@ Workflow names and filenames are standardized by product surface:
 | Workflow name | YAML file | Scope |
 |---|---|---|
 | `Feed - Ingest` | `.github/workflows/feed_ingest.yml` | Raw feed pipeline |
-| `Summary - Overlay` | `.github/workflows/summary_overlay.yml` | Runs both General Top Stories and AI summary payloads |
+| `Summary - Top Stories` | `.github/workflows/summary_top_stories.yml` | Runs the General Top Stories payload |
+| `Summary - AI` | `.github/workflows/summary_ai.yml` | Runs the AI summary payload |
 | `CI - Test` | `.github/workflows/ci_test.yml` | Ruff, pytest, frontend build |
 | `Ops - Keep Alive` | `.github/workflows/ops_keep_alive.yml` | Keep scheduled Actions alive |
 
@@ -140,7 +141,7 @@ Guideline:
 
 ## Runtime Architecture
 
-### Feed - Ingest (`job.py`)
+### Feed - Ingest (`feed_ingest.py`)
 
 - scrape Zaobao sitemap
 - scrape Astro YouTube uploads playlist
@@ -157,15 +158,19 @@ Key constants:
 - `ASSESS_MODEL = "deepseek-v4-pro"`
 - `DISTILL_MODEL = "deepseek-v4-pro"`
 
-### Summary - Overlay (`summary_overlay.yml`)
+### Summary - Top Stories (`summary_top_stories.yml`)
 
-The overlay workflow runs both summary scripts sequentially:
-- `weekly_summary.py`
-- `ai_radar.py`
+- Runs `summary_top_stories.py`
+- Writes `weekly_summary`
+- Kept separate so Top Stories can be rerun and debugged independently
 
-This keeps the UI-aligned summaries under one workflow while avoiding extra quota burst from parallel summary runs.
+### Summary - AI (`summary_ai.yml`)
 
-### Top Stories engine (`weekly_summary.py`)
+- Runs `summary_ai.py`
+- Writes `ai_radar`
+- Kept separate so AI summary can be rerun and debugged independently
+
+### Top Stories engine (`summary_top_stories.py`)
 
 - uses `gemini-3.5-flash` for 3 grounded discovery calls:
   - `International`
@@ -180,7 +185,7 @@ Important behavior:
 - no dependency on `headlines` prompt-caching design anymore
 - return fewer topics rather than padding weak ones
 
-### AI engine (`ai_radar.py`)
+### AI engine (`summary_ai.py`)
 
 - uses `gemini-3.5-flash` for grounded discovery in:
   - `governance`
@@ -268,9 +273,9 @@ uv run ruff check .
 
 Key tests:
 - `tests/test_invariants.py`
-- `tests/test_call_claude.py` (legacy filename, still covers shared LLM-call helpers)
-- `tests/test_weekly_summary.py`
-- `tests/test_ai_radar.py`
+- `tests/test_feed_ingest.py` (legacy filename, still covers shared LLM-call helpers)
+- `tests/test_summary_top_stories.py`
+- `tests/test_summary_ai.py`
 - scraper tests
 
 `CI - Test` is the single workflow whose job is to run validation. Content workflows should stay focused on content generation.
@@ -281,7 +286,7 @@ Key tests:
 
 1. Confirm code is committed and CI is green.
 2. Delete rows from: `headlines`, `assessment_logs`, `prompt_rules`, `learning_digest`, `weekly_summary`, `ai_radar`.
-3. Trigger `workflow_dispatch` on `Feed - Ingest`, then on `Summary - Overlay`.
+3. Trigger `workflow_dispatch` on `Feed - Ingest`, then on `Summary - Top Stories` and `Summary - AI`.
 4. Verify with:
 
 ```sql

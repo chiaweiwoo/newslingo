@@ -48,7 +48,7 @@ The translation pipeline self-improves: a quality-assessment step scores each ba
 | AI | DeepSeek V4 Flash (headline + summary translation) · DeepSeek V4 Pro (assessment + rule distillation) · Gemini 3.5 Flash (Top Stories + AI discovery and selection) |
 | Database | Supabase (Postgres) |
 | Observability | Langfuse Cloud - token counts, cost, latency, translation quality scores |
-| Jobs | GitHub Actions - Feed every 3h, unified summary overlay daily at 09:00 SGT |
+| Jobs | GitHub Actions - Feed every 3h, Top Stories daily at 09:00 SGT, AI summary daily at 09:30 SGT |
 
 ---
 
@@ -61,7 +61,7 @@ flowchart LR
         YT["Astro Ben Di Quan\nYouTube API"]
     end
 
-    subgraph agg["job.py · every 3 hours"]
+    subgraph agg["feed_ingest.py · every 3 hours"]
         TR["Translate\nDeepSeek Flash"]
         AS["Assess 1-5\nDeepSeek Pro"]
         DR["Distil rules\nDeepSeek Pro"]
@@ -70,13 +70,13 @@ flowchart LR
 
     DB[("Supabase")]
 
-    subgraph summary["weekly_summary.py · daily 09:00 SGT"]
+    subgraph summary["summary_top_stories.py · daily 09:00 SGT"]
         P1["Discover + select\nGemini"]
         P2["EN->ZH\nDeepSeek Flash"]
         P1 --> P2
     end
 
-    subgraph radar["ai_radar.py · daily 09:30 SGT"]
+    subgraph radar["summary_ai.py · daily 09:30 SGT"]
         R1["Search + summarise\nGemini"]
         R2["Translate to ZH\nDeepSeek Flash"]
         R1 --> R2
@@ -92,11 +92,11 @@ flowchart LR
     DB --> FE
 ```
 
-**Aggregation (`job.py`):** scrapes Zaobao sitemaps and the Astro YouTube uploads playlist, translates headlines with DeepSeek Flash, scores each translation 1-5 with DeepSeek Pro, then distils failures into rules that improve the next run.
+**Aggregation (`feed_ingest.py`):** scrapes Zaobao sitemaps and the Astro YouTube uploads playlist, translates headlines with DeepSeek Flash, scores each translation 1-5 with DeepSeek Pro, then distils failures into rules that improve the next run.
 
-**Top Stories (`weekly_summary.py`):** Gemini 3.5 Flash discovers and ranks important stories from the open web across International, Singapore, and Malaysia, then DeepSeek Flash translates the final topics into Simplified Chinese.
+**Top Stories (`summary_top_stories.py`):** Gemini 3.5 Flash discovers and ranks important stories from the open web across International, Singapore, and Malaysia, then DeepSeek Flash translates the final topics into Simplified Chinese.
 
-**AI Radar (`ai_radar.py`):** daily AI-specific search-and-summarise job across governance, product, and infrastructure. Gemini 3.5 Flash handles grounded discovery, then DeepSeek Flash adds Simplified Chinese fields for the shared drawer.
+**AI Radar (`summary_ai.py`):** daily AI-specific search-and-summarise job across governance, product, and infrastructure. Gemini 3.5 Flash handles grounded discovery, then DeepSeek Flash adds Simplified Chinese fields for the shared drawer.
 
 ---
 
@@ -125,9 +125,9 @@ Copy `.env.example` -> `.env` and `frontend/.env.example` -> `frontend/.env` and
 ```bash
 # Backend
 uv sync
-uv run job.py
-uv run weekly_summary.py
-uv run ai_radar.py
+uv run feed_ingest.py
+uv run summary_top_stories.py
+uv run summary_ai.py
 uv run python -m pytest -q
 
 # Frontend
@@ -143,6 +143,7 @@ Tests cover: URL->category mapping, scraper output schema, JSON parsing, archite
 | Workflow name | YAML file | Scope |
 |---|---|---|
 | `Feed - Ingest` | `.github/workflows/feed_ingest.yml` | Raw news feed pipeline: scrape, translate, classify, assess, distill, and write `headlines` |
-| `Summary - Overlay` | `.github/workflows/summary_overlay.yml` | Runs both General Top Stories and AI Radar for the shared sparkle drawer |
+| `Summary - Top Stories` | `.github/workflows/summary_top_stories.yml` | Runs the General Top Stories payload for the shared sparkle drawer |
+| `Summary - AI` | `.github/workflows/summary_ai.yml` | Runs the AI summary payload for the shared sparkle drawer |
 | `CI - Test` | `.github/workflows/ci_test.yml` | Ruff, pytest, and frontend build checks |
 | `Ops - Keep Alive` | `.github/workflows/ops_keep_alive.yml` | Scheduled maintenance ping to keep Actions active |

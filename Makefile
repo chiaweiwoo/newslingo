@@ -19,7 +19,7 @@ lint-fix:
 
 # Run the job locally (requires .env)
 run:
-	uv run job.py
+	uv run feed_ingest.py
 
 # Reset DB tables (headlines, assessment_logs, prompt_rules, learning_digest)
 # WARNING: destructive — clears all aggregated data
@@ -38,5 +38,5 @@ help:
 	@echo "  make test       — run pytest"
 	@echo "  make lint       — run ruff linter"
 	@echo "  make lint-fix   — auto-fix ruff issues"
-	@echo "  make run        — run job.py locally"
+	@echo "  make run        — run feed_ingest.py locally"
 	@echo "  make reset-db   — clear headlines/assessment_logs/prompt_rules (destructive)"

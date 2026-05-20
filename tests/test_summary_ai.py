@@ -1,5 +1,5 @@
 """
-Unit tests for ai_radar.py.
+Unit tests for summary_ai.py.
 """
 
 import json
@@ -18,7 +18,7 @@ os.environ.setdefault("GEMINI_API_KEY", "fake-gemini-key")
 with patch("supabase.create_client", return_value=MagicMock()):
     with patch("anthropic.Anthropic", return_value=MagicMock()):
         with patch("google.genai.Client", return_value=MagicMock()):
-            import ai_radar
+            import summary_ai
 
 
 def _usage(input_tokens: int, output_tokens: int):
@@ -38,18 +38,18 @@ def _make_deepseek_response(text: str, in_tok: int = 100, out_tok: int = 200):
 
 class TestModelAndPromptConfig:
     def test_models_use_gemini_and_deepseek(self):
-        assert ai_radar.AI_RADAR_MODEL == "gemini-3.5-flash"
-        assert ai_radar.AI_RADAR_DISCOVERY_MODEL == "gemini-3.5-flash"
-        assert ai_radar.AI_RADAR_TRANSLATION_MODEL == "deepseek-v4-flash"
+        assert summary_ai.AI_RADAR_MODEL == "gemini-3.5-flash"
+        assert summary_ai.AI_RADAR_DISCOVERY_MODEL == "gemini-3.5-flash"
+        assert summary_ai.AI_RADAR_TRANSLATION_MODEL == "deepseek-v4-flash"
 
     def test_translation_prompt_contract_present(self):
-        prompt = ai_radar.AI_RADAR_TRANSLATION_SYSTEM_PROMPT
+        prompt = summary_ai.AI_RADAR_TRANSLATION_SYSTEM_PROMPT
         assert '"title_zh"' in prompt
         assert '"description_zh"' in prompt
         assert "Return ONLY the JSON array" in prompt
 
     def test_search_prompt_contract_present(self):
-        prompt = ai_radar.AI_RADAR_SYSTEM_PROMPT
+        prompt = summary_ai.AI_RADAR_SYSTEM_PROMPT
         assert '"sources"' in prompt
         assert "last 7 days" in prompt
         assert "Return ONLY the JSON object" in prompt
@@ -58,14 +58,14 @@ class TestModelAndPromptConfig:
 class TestJsonParsing:
     def test_extract_json_object_from_prose_output(self):
         text = 'Here you go:\n{"items": []}\nDone.'
-        assert ai_radar._extract_json_object(text) == '{"items": []}'
+        assert summary_ai._extract_json_object(text) == '{"items": []}'
 
     def test_parse_items_payload_accepts_valid_object(self):
-        payload = ai_radar._parse_items_payload('{"items": []}')
+        payload = summary_ai._parse_items_payload('{"items": []}')
         assert payload == {"items": []}
 
     def test_normalize_items_filters_bad_rows(self):
-        items = ai_radar._normalize_items(
+        items = summary_ai._normalize_items(
             {
                 "items": [
                     {"title": "A", "description": "B", "sources": [{"title": "S", "url": "https://x"}]},
@@ -80,15 +80,15 @@ class TestJsonParsing:
 class TestCallAiRadar:
     def test_call_category_uses_grounded_gemini(self):
         with patch.object(
-            ai_radar,
+            summary_ai,
             "_call_gemini_json",
             return_value=(
                 json.dumps({"items": [{"title": "A", "description": "B", "sources": [{"title": "S", "url": "https://x"}]}]}),
                 _usage(10, 5),
             ),
         ) as call_gemini:
-            result, usage = ai_radar._call_category(
-                ai_radar.CATEGORY_SPECS[0],
+            result, usage = summary_ai._call_category(
+                summary_ai.CATEGORY_SPECS[0],
                 datetime(2026, 5, 20, tzinfo=timezone.utc),
             )
 
@@ -99,7 +99,7 @@ class TestCallAiRadar:
 
     def test_call_ai_radar_combines_category_results(self):
         with patch.object(
-            ai_radar,
+            summary_ai,
             "_call_category",
             side_effect=[
                 (
@@ -116,7 +116,7 @@ class TestCallAiRadar:
                 ),
             ],
         ), patch.object(
-            ai_radar,
+            summary_ai,
             "_translate_categories_to_zh",
             return_value=(
                 [
@@ -127,19 +127,19 @@ class TestCallAiRadar:
                 _usage(20, 10),
             ),
         ):
-            payload, usage = ai_radar._call_ai_radar(datetime(2026, 5, 20, tzinfo=timezone.utc))
+            payload, usage = summary_ai._call_ai_radar(datetime(2026, 5, 20, tzinfo=timezone.utc))
 
         assert [category["key"] for category in payload["categories"]] == ["governance", "product", "infrastructure"]
         assert usage.input_tokens == 320
         assert usage.output_tokens == 130
 
     def test_translate_categories_to_zh_merges_fields(self):
-        ai_radar.deepseek = MagicMock()
-        ai_radar.deepseek.messages.create.return_value = _make_deepseek_response(
+        summary_ai.deepseek = MagicMock()
+        summary_ai.deepseek.messages.create.return_value = _make_deepseek_response(
             '[{"idx":0,"title_zh":"标题","description_zh":"描述"}]'
         )
 
-        categories, usage = ai_radar._translate_categories_to_zh(
+        categories, usage = summary_ai._translate_categories_to_zh(
             [
                 {
                     "key": "governance",
@@ -162,16 +162,16 @@ class TestRotation:
         mock_table.update.return_value.eq.return_value.execute.return_value = MagicMock()
         mock_table.insert.return_value.execute.return_value = MagicMock()
 
-        ai_radar.supabase = MagicMock()
-        ai_radar.supabase.table.return_value = mock_table
+        summary_ai.supabase = MagicMock()
+        summary_ai.supabase.table.return_value = mock_table
 
-        ai_radar._store_radar(
+        summary_ai._store_radar(
             datetime(2026, 5, 20, tzinfo=timezone.utc),
             {"categories": []},
             {"id": "old-id"},
         )
 
-        assert ai_radar.supabase.table.mock_calls == [
+        assert summary_ai.supabase.table.mock_calls == [
             call("ai_radar"),
             call().update({"active": False}),
             call().update().eq("id", "old-id"),

@@ -614,6 +614,7 @@ def _store_summary(now: datetime, payload: dict, previous: dict | None) -> None:
 
 
 
+
 def _main() -> None:
     print("[summary] NewsLingo Top Stories job starting", flush=True)
 

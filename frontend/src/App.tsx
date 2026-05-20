@@ -12,6 +12,7 @@ import HeadlineCard from './components/HeadlineCard';
 import QuizDrawer from './components/QuizDrawer';
 import SearchBar from './components/SearchBar';
 import StatsDrawer from './components/StatsDrawer';
+import DigestPreviewDrawer from './components/DigestPreviewDrawer';
 import ThisWeekDrawer from './components/ThisWeekDrawer';
 
 const supabase = createClient(
@@ -67,6 +68,7 @@ export default function App() {
   const headerRef   = useRef<HTMLDivElement>(null);
   const { isOpen: isAboutOpen,     onOpen: onAboutOpen,     onClose: onAboutClose     } = useDisclosure();
   const { isOpen: isThisWeekOpen,  onOpen: onThisWeekOpen,  onClose: onThisWeekClose  } = useDisclosure();
+  const { isOpen: isDigestOpen,    onOpen: onDigestOpen,    onClose: onDigestClose    } = useDisclosure();
   const { isOpen: isQuizOpen,      onOpen: onQuizOpen,      onClose: onQuizClose      } = useDisclosure();
   const { isOpen: isStatsOpen,     onOpen: onStatsOpen,     onClose: onStatsClose     } = useDisclosure();
 
@@ -412,6 +414,17 @@ export default function App() {
                     >
                       Statistics
                     </MenuItem>
+                    <MenuItem
+                      onClick={onDigestOpen}
+                      fontSize="xs"
+                      color="brand.ink"
+                      bg="brand.card"
+                      _hover={{ bg: 'brand.paper' }}
+                      _focus={{ bg: 'brand.paper' }}
+                      px={4} py={2.5}
+                    >
+                      Email Preview
+                    </MenuItem>
                   </MenuGroup>
 
                   {/* Footnotes — last updated + author */}
@@ -543,6 +556,7 @@ export default function App() {
 
       <AboutDrawer     isOpen={isAboutOpen}    onClose={onAboutClose} />
       <ThisWeekDrawer  isOpen={isThisWeekOpen} onClose={onThisWeekClose} />
+      <DigestPreviewDrawer isOpen={isDigestOpen} onClose={onDigestClose} />
       <QuizDrawer      isOpen={isQuizOpen}     onClose={onQuizClose} />
       <StatsDrawer     isOpen={isStatsOpen}    onClose={onStatsClose} />
     </Box>

@@ -50,7 +50,6 @@ class TestModelAndPromptConfig:
 
     def test_search_prompt_contract_present(self):
         prompt = summary_ai.AI_RADAR_SYSTEM_PROMPT
-        assert '"sources"' in prompt
         assert "last 7 days" in prompt
         assert "Return ONLY the JSON object" in prompt
 
@@ -60,6 +59,12 @@ class TestJsonParsing:
         text = 'Here you go:\n{"items": []}\nDone.'
         assert summary_ai._extract_json_object(text) == '{"items": []}'
 
+    def test_extract_json_object_repairs_truncated_json(self):
+        text = '{"items": [{"title": "Truncated'
+        repaired = summary_ai._extract_json_object(text)
+        assert repaired == '{"items": [{"title": "Truncated"}]}'
+        assert json.loads(repaired) == {"items": [{"title": "Truncated"}]}
+
     def test_parse_items_payload_accepts_valid_object(self):
         payload = summary_ai._parse_items_payload('{"items": []}')
         assert payload == {"items": []}
@@ -68,13 +73,13 @@ class TestJsonParsing:
         items = summary_ai._normalize_items(
             {
                 "items": [
-                    {"title": "A", "description": "B", "sources": [{"title": "S", "url": "https://x"}]},
-                    {"title": "", "description": "B", "sources": []},
+                    {"title": "A", "description": "B"},
+                    {"title": "", "description": "B"},
                 ]
             }
         )
         assert len(items) == 1
-        assert items[0]["sources"][0]["title"] == "S"
+        assert items[0]["title"] == "A"
 
 
 class TestCallAiRadar:
@@ -83,7 +88,7 @@ class TestCallAiRadar:
             summary_ai,
             "_call_gemini_json",
             return_value=(
-                json.dumps({"items": [{"title": "A", "description": "B", "sources": [{"title": "S", "url": "https://x"}]}]}),
+                json.dumps({"items": [{"title": "A", "description": "B"}]}),
                 _usage(10, 5),
             ),
         ) as call_gemini:
@@ -103,7 +108,7 @@ class TestCallAiRadar:
             "_call_category",
             side_effect=[
                 (
-                    {"key": "governance", "title": "AI Governance Radar", "items": [{"title": "A", "description": "B", "sources": []}]},
+                    {"key": "governance", "title": "AI Governance Radar", "items": [{"title": "A", "description": "B"}]},
                     _usage(100, 50),
                 ),
                 (
@@ -120,7 +125,7 @@ class TestCallAiRadar:
             "_translate_categories_to_zh",
             return_value=(
                 [
-                    {"key": "governance", "title": "AI Governance Radar", "items": [{"title": "A", "description": "B", "title_zh": "甲", "description_zh": "乙", "sources": []}]},
+                    {"key": "governance", "title": "AI Governance Radar", "items": [{"title": "A", "description": "B", "title_zh": "甲", "description_zh": "乙"}]},
                     {"key": "product", "title": "AI Product Radar", "items": []},
                     {"key": "infrastructure", "title": "AI Infrastructure Radar", "items": []},
                 ],
@@ -144,7 +149,7 @@ class TestCallAiRadar:
                 {
                     "key": "governance",
                     "title": "AI Governance Radar",
-                    "items": [{"title": "Title", "description": "Desc", "sources": []}],
+                    "items": [{"title": "Title", "description": "Desc"}],
                 }
             ]
         )

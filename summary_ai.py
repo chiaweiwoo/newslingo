@@ -93,8 +93,7 @@ AI_RADAR_SYSTEM_PROMPT = (
     '  "items": [\n'
     "    {\n"
     '      "title": "Short English title",\n'
-    '      "description": "One concise English sentence, about 8 to 14 words",\n'
-    '      "sources": [{"title": "Source title", "url": "https://example.com"}]\n'
+    '      "description": "One concise English sentence, about 8 to 14 words"\n'
     "    }\n"
     "  ]\n"
     "}\n\n"
@@ -102,15 +101,11 @@ AI_RADAR_SYSTEM_PROMPT = (
     "  - Include only developments from the last 7 days.\n"
     "  - Prefer strategic, operational, financial, political, legal, or social impact.\n"
     "  - Avoid duplicates, minor follow-ons, and hype.\n"
-    "  - Prefer primary sources first; strong reporting is acceptable when primary sources are unavailable.\n"
-    "  - Use 1 to 2 sources per item.\n"
     "  - If the category is quiet, return fewer items rather than padding.\n"
-    "  - Keep all fields in English only.\n"
-    "  - Do not invent facts, citations, or URLs.\n\n"
+    "  - Keep all fields in English only.\n\n"
     "SELF-CHECK BEFORE RETURNING:\n"
     "  - Confirm the output is valid JSON with exactly one top-level key: items.\n"
-    "  - Confirm every item has title, description, and sources.\n"
-    "  - Confirm every source has title and url.\n"
+    "  - Confirm every item has title and description.\n"
     "  - Confirm every item is grounded in searched material from the last 7 days.\n\n"
     "Return ONLY the JSON object. No preamble, no explanation, no markdown fences."
 )
@@ -137,18 +132,122 @@ AI_RADAR_TRANSLATION_SYSTEM_PROMPT = (
 
 def _extract_json_object(text: str) -> str | None:
     first = text.find("{")
-    last = text.rfind("}")
-    if first == -1 or last == -1 or last <= first:
+    if first == -1:
         return None
-    return text[first : last + 1]
+
+    body = text[first:]
+
+    # Try standard rfind approach first
+    last = body.rfind("}")
+    if last != -1:
+        candidate = body[: last + 1]
+        try:
+            json.loads(candidate)
+            return candidate
+        except json.JSONDecodeError:
+            pass
+
+    # Repair logic for truncated JSON
+    stack = []
+    in_string = False
+    escaped = False
+
+    for char in body:
+        if escaped:
+            escaped = False
+            continue
+        if char == "\\":
+            escaped = True
+            continue
+        if char == '"':
+            in_string = not in_string
+            continue
+
+        if not in_string:
+            if char == "{":
+                stack.append("}")
+            elif char == "[":
+                stack.append("]")
+            elif char == "}":
+                if stack and stack[-1] == "}":
+                    stack.pop()
+            elif char == "]":
+                if stack and stack[-1] == "]":
+                    stack.pop()
+
+    repaired = body
+    if in_string:
+        repaired += '"'
+    else:
+        repaired = repaired.rstrip().rstrip(",")
+
+    if stack:
+        repaired += "".join(reversed(stack))
+
+    try:
+        json.loads(repaired)
+        return repaired
+    except json.JSONDecodeError:
+        return None
 
 
 def _extract_json_array(text: str) -> str | None:
     first = text.find("[")
-    last = text.rfind("]")
-    if first == -1 or last == -1 or last <= first:
+    if first == -1:
         return None
-    return text[first : last + 1]
+
+    body = text[first:]
+
+    # Standard rfind
+    last = body.rfind("]")
+    if last != -1:
+        candidate = body[: last + 1]
+        try:
+            json.loads(candidate)
+            return candidate
+        except json.JSONDecodeError:
+            pass
+
+    # Basic repair
+    stack = []
+    in_string = False
+    escaped = False
+    for char in body:
+        if escaped:
+            escaped = False
+            continue
+        if char == "\\":
+            escaped = True
+            continue
+        if char == '"':
+            in_string = not in_string
+            continue
+        if not in_string:
+            if char == "[":
+                stack.append("]")
+            elif char == "{":
+                stack.append("}")
+            elif char == "]":
+                if stack and stack[-1] == "]":
+                    stack.pop()
+            elif char == "}":
+                if stack and stack[-1] == "}":
+                    stack.pop()
+
+    repaired = body
+    if in_string:
+        repaired += '"'
+    else:
+        repaired = repaired.rstrip().rstrip(",")
+
+    if stack:
+        repaired += "".join(reversed(stack))
+
+    try:
+        json.loads(repaired)
+        return repaired
+    except json.JSONDecodeError:
+        return None
 
 
 def _gemini_text(response: object) -> str:
@@ -230,20 +329,12 @@ def _normalize_items(payload: dict) -> list[dict]:
     for item in items if isinstance(items, list) else []:
         title = str(item.get("title") or "").strip()
         description = str(item.get("description") or "").strip()
-        sources = item.get("sources")
-        if not title or not description or not isinstance(sources, list):
+        if not title or not description:
             continue
-        clean_sources = []
-        for source in sources[:2]:
-            source_title = str(source.get("title") or "").strip()
-            source_url = str(source.get("url") or "").strip()
-            if source_title and source_url:
-                clean_sources.append({"title": source_title, "url": source_url})
         normalized.append(
             {
                 "title": title,
                 "description": description,
-                "sources": clean_sources,
             }
         )
     return normalized

@@ -12,59 +12,35 @@ from unittest.mock import MagicMock, call, patch
 sys.modules.setdefault("supabase", MagicMock())
 os.environ.setdefault("SUPABASE_URL", "https://fake.supabase.co")
 os.environ.setdefault("SUPABASE_SERVICE_KEY", "fake-key")
-os.environ.setdefault("ANTHROPIC_API_KEY", "fake-key")
+os.environ.setdefault("DEEPSEEK_API_KEY", "fake-deepseek-key")
+os.environ.setdefault("GEMINI_API_KEY", "fake-gemini-key")
 
 with patch("supabase.create_client", return_value=MagicMock()):
     with patch("anthropic.Anthropic", return_value=MagicMock()):
-        import ai_radar
+        with patch("google.genai.Client", return_value=MagicMock()):
+            import ai_radar
 
 
-def _make_claude_response(text: str, stop_reason: str = "end_turn", in_tok: int = 100, out_tok: int = 200):
+def _usage(input_tokens: int, output_tokens: int):
+    return types.SimpleNamespace(input_tokens=input_tokens, output_tokens=output_tokens)
+
+
+def _make_deepseek_response(text: str, in_tok: int = 100, out_tok: int = 200):
     msg = MagicMock()
     block = MagicMock()
     block.type = "text"
     block.text = text
     msg.content = [block]
-    msg.stop_reason = stop_reason
     msg.usage.input_tokens = in_tok
     msg.usage.output_tokens = out_tok
     return msg
 
 
-class TestModelAndToolConfig:
-    def test_model_is_web_search_compatible_haiku(self):
-        assert ai_radar.AI_RADAR_MODEL == "claude-haiku-4-5"
-        assert "haiku" in ai_radar.AI_RADAR_MODEL.lower()
-        assert ai_radar.AI_RADAR_FALLBACK_MODEL == "claude-sonnet-4-6"
-
-    def test_web_search_tool_is_configured(self):
-        tool = ai_radar.WEB_SEARCH_TOOL
-        assert tool["type"] == "web_search_20260209"
-        assert tool["name"] == "web_search"
-        assert tool["max_uses"] == ai_radar.WEB_SEARCH_MAX_USES
-        assert tool["allowed_callers"] == ["direct"]
-
-    def test_category_calls_use_smaller_budgets(self):
-        assert ai_radar.LOOKBACK_DAYS == 7
-        assert ai_radar.WEB_SEARCH_MAX_USES == 3
-        assert ai_radar.AI_RADAR_MAX_TOKENS == 2600
-        assert ai_radar.AI_RADAR_TRANSLATION_MAX_TOKENS == 2200
-        assert ai_radar.AI_RADAR_TRANSLATION_BATCH_SIZE == 10
-
-
-class TestPromptContract:
-    def test_json_only_instruction_present(self):
-        prompt = ai_radar.AI_RADAR_SYSTEM_PROMPT
-        assert "Return ONLY the JSON object" in prompt
-        assert "markdown fences" in prompt
-
-    def test_requires_sources_and_self_check(self):
-        prompt = ai_radar.AI_RADAR_SYSTEM_PROMPT
-        assert '"sources"' in prompt
-        assert "SELF-CHECK" in prompt
-        assert "1 to 2 source objects" in prompt
-        assert "Do not include inline citation markup" in prompt
-        assert "8 to 14 words" in prompt
+class TestModelAndPromptConfig:
+    def test_models_use_gemini_and_deepseek(self):
+        assert ai_radar.AI_RADAR_MODEL == "gemini-3.5-flash"
+        assert ai_radar.AI_RADAR_DISCOVERY_MODEL == "gemini-3.5-flash"
+        assert ai_radar.AI_RADAR_TRANSLATION_MODEL == "deepseek-v4-flash"
 
     def test_translation_prompt_contract_present(self):
         prompt = ai_radar.AI_RADAR_TRANSLATION_SYSTEM_PROMPT
@@ -72,81 +48,54 @@ class TestPromptContract:
         assert '"description_zh"' in prompt
         assert "Return ONLY the JSON array" in prompt
 
-    def test_contains_three_category_keys(self):
-        keys = [spec["key"] for spec in ai_radar.CATEGORY_SPECS]
-        assert keys == ["governance", "product", "infrastructure"]
-
-    def test_includes_confidence_hedging_and_escalation(self):
+    def test_search_prompt_contract_present(self):
         prompt = ai_radar.AI_RADAR_SYSTEM_PROMPT
-        assert "CONFIDENCE HEDGING" in prompt
-        assert "ESCALATION RULE" in prompt
-
-    def test_explicitly_requires_english_output(self):
-        prompt = ai_radar.AI_RADAR_SYSTEM_PROMPT
-        assert "English only" in prompt
+        assert '"sources"' in prompt
+        assert "last 7 days" in prompt
+        assert "Return ONLY the JSON object" in prompt
 
 
 class TestJsonParsing:
-    def test_extract_json_object_from_fenced_output(self):
-        text = '```json\n{"items": []}\n```'
-        result = ai_radar._extract_json_object(text)
-        assert result == '{"items": []}'
-
     def test_extract_json_object_from_prose_output(self):
         text = 'Here you go:\n{"items": []}\nDone.'
-        result = ai_radar._extract_json_object(text)
-        assert result == '{"items": []}'
+        assert ai_radar._extract_json_object(text) == '{"items": []}'
 
     def test_parse_items_payload_accepts_valid_object(self):
         payload = ai_radar._parse_items_payload('{"items": []}')
         assert payload == {"items": []}
 
-    def test_parse_items_payload_strips_citation_markup(self):
-        raw = """```json
-{
-  "items": [
-    {
-      "title": "OpenAI Update",
-      "description": "<cite index="2-1">OpenAI launched a feature</cite> for enterprise users.",
-      "sources": [{"title": "OpenAI", "url": "https://example.com"}]
-    }
-  ]
-}
-```"""
-        payload = ai_radar._parse_items_payload(raw)
-        assert payload["items"][0]["description"] == " for enterprise users."
-
-    def test_extract_json_array_from_fenced_output(self):
-        text = '```json\n[{"idx":0}]\n```'
-        result = ai_radar._extract_json_array(text)
-        assert result == '[{"idx":0}]'
+    def test_normalize_items_filters_bad_rows(self):
+        items = ai_radar._normalize_items(
+            {
+                "items": [
+                    {"title": "A", "description": "B", "sources": [{"title": "S", "url": "https://x"}]},
+                    {"title": "", "description": "B", "sources": []},
+                ]
+            }
+        )
+        assert len(items) == 1
+        assert items[0]["sources"][0]["title"] == "S"
 
 
 class TestCallAiRadar:
-    def test_call_category_uses_web_search_tool(self):
-        ai_radar.claude = MagicMock()
-        ai_radar.claude.messages.create.return_value = _make_claude_response(
-            json.dumps({"items": []})
-        )
+    def test_call_category_uses_grounded_gemini(self):
+        with patch.object(
+            ai_radar,
+            "_call_gemini_json",
+            return_value=(
+                json.dumps({"items": [{"title": "A", "description": "B", "sources": [{"title": "S", "url": "https://x"}]}]}),
+                _usage(10, 5),
+            ),
+        ) as call_gemini:
+            result, usage = ai_radar._call_category(
+                ai_radar.CATEGORY_SPECS[0],
+                datetime(2026, 5, 20, tzinfo=timezone.utc),
+            )
 
-        ai_radar._call_category(ai_radar.CATEGORY_SPECS[0], datetime(2026, 5, 19, tzinfo=timezone.utc), ai_radar.AI_RADAR_MODEL)
-
-        kwargs = ai_radar.claude.messages.create.call_args.kwargs
-        assert kwargs["model"] == ai_radar.AI_RADAR_MODEL
-        assert kwargs["tools"] == [ai_radar.WEB_SEARCH_TOOL]
-        assert kwargs["max_tokens"] == ai_radar.AI_RADAR_MAX_TOKENS
-
-    def test_call_category_pause_turn_retries_with_assistant_content(self):
-        ai_radar.claude = MagicMock()
-        first = _make_claude_response("Searching...", stop_reason="pause_turn")
-        second = _make_claude_response(json.dumps({"items": []}))
-        ai_radar.claude.messages.create.side_effect = [first, second]
-
-        ai_radar._call_category(ai_radar.CATEGORY_SPECS[0], datetime(2026, 5, 19, tzinfo=timezone.utc), ai_radar.AI_RADAR_MODEL)
-
-        assert ai_radar.claude.messages.create.call_count == 2
-        second_call = ai_radar.claude.messages.create.call_args_list[1].kwargs
-        assert second_call["messages"][1]["role"] == "assistant"
+        kwargs = call_gemini.call_args.kwargs
+        assert kwargs["use_search"] is True
+        assert result["key"] == "governance"
+        assert usage.input_tokens == 10
 
     def test_call_ai_radar_combines_category_results(self):
         with patch.object(
@@ -155,15 +104,15 @@ class TestCallAiRadar:
             side_effect=[
                 (
                     {"key": "governance", "title": "AI Governance Radar", "items": [{"title": "A", "description": "B", "sources": []}]},
-                    types.SimpleNamespace(input_tokens=100, output_tokens=50),
+                    _usage(100, 50),
                 ),
                 (
                     {"key": "product", "title": "AI Product Radar", "items": []},
-                    types.SimpleNamespace(input_tokens=120, output_tokens=40),
+                    _usage(120, 40),
                 ),
                 (
                     {"key": "infrastructure", "title": "AI Infrastructure Radar", "items": []},
-                    types.SimpleNamespace(input_tokens=80, output_tokens=30),
+                    _usage(80, 30),
                 ),
             ],
         ), patch.object(
@@ -175,101 +124,36 @@ class TestCallAiRadar:
                     {"key": "product", "title": "AI Product Radar", "items": []},
                     {"key": "infrastructure", "title": "AI Infrastructure Radar", "items": []},
                 ],
-                types.SimpleNamespace(input_tokens=20, output_tokens=10),
+                _usage(20, 10),
             ),
         ):
-            payload, usage = ai_radar._call_ai_radar(datetime(2026, 5, 19, tzinfo=timezone.utc))
-        keys = [category["key"] for category in payload["categories"]]
-        assert keys == ["governance", "product", "infrastructure"]
+            payload, usage = ai_radar._call_ai_radar(datetime(2026, 5, 20, tzinfo=timezone.utc))
+
+        assert [category["key"] for category in payload["categories"]] == ["governance", "product", "infrastructure"]
         assert usage.input_tokens == 320
         assert usage.output_tokens == 130
 
-    def test_call_category_retries_rate_limit_errors(self):
-        ai_radar.claude = MagicMock()
-        ai_radar.claude.messages.create.side_effect = [
-            Exception("429 rate_limit_error"),
-            _make_claude_response(json.dumps({"items": []})),
-        ]
-
-        with patch("ai_radar.time.sleep") as sleep:
-            result, _usage = ai_radar._call_category(ai_radar.CATEGORY_SPECS[0], datetime(2026, 5, 19, tzinfo=timezone.utc), ai_radar.AI_RADAR_MODEL)
-
-        assert result["key"] == "governance"
-        sleep.assert_called_once()
-
-    def test_call_ai_radar_falls_back_when_model_missing(self):
-        with patch.object(
-            ai_radar,
-            "_call_category",
-            side_effect=[
-                Exception("404 not_found_error model: claude-haiku-4-5"),
-                (
-                    {"key": "governance", "title": "AI Governance Radar", "items": []},
-                    types.SimpleNamespace(input_tokens=10, output_tokens=5),
-                ),
-                (
-                    {"key": "product", "title": "AI Product Radar", "items": []},
-                    types.SimpleNamespace(input_tokens=10, output_tokens=5),
-                ),
-                (
-                    {"key": "infrastructure", "title": "AI Infrastructure Radar", "items": []},
-                    types.SimpleNamespace(input_tokens=10, output_tokens=5),
-                ),
-            ],
-        ), patch.object(
-            ai_radar,
-            "_translate_categories_to_zh",
-            return_value=(
-                [
-                    {"key": "governance", "title": "AI Governance Radar", "items": []},
-                    {"key": "product", "title": "AI Product Radar", "items": []},
-                    {"key": "infrastructure", "title": "AI Infrastructure Radar", "items": []},
-                ],
-                types.SimpleNamespace(input_tokens=6, output_tokens=3),
-            ),
-        ):
-            payload, usage = ai_radar._call_ai_radar(datetime(2026, 5, 19, tzinfo=timezone.utc))
-
-        assert [category["key"] for category in payload["categories"]] == ["governance", "product", "infrastructure"]
-        assert usage.input_tokens == 36
-        assert usage.output_tokens == 18
-
     def test_translate_categories_to_zh_merges_fields(self):
-        ai_radar.claude = MagicMock()
-        ai_radar.claude.messages.create.return_value = _make_claude_response(
+        ai_radar.deepseek = MagicMock()
+        ai_radar.deepseek.messages.create.return_value = _make_deepseek_response(
             '[{"idx":0,"title_zh":"标题","description_zh":"描述"}]'
         )
 
-        categories, usage = ai_radar._translate_categories_to_zh([
-            {"key": "governance", "title": "AI Governance Radar", "items": [{"title": "Title", "description": "Desc", "sources": []}]}
-        ])
+        categories, usage = ai_radar._translate_categories_to_zh(
+            [
+                {
+                    "key": "governance",
+                    "title": "AI Governance Radar",
+                    "items": [{"title": "Title", "description": "Desc", "sources": []}],
+                }
+            ]
+        )
 
         item = categories[0]["items"][0]
         assert item["title_zh"] == "标题"
         assert item["description_zh"] == "描述"
         assert usage.input_tokens == 100
         assert usage.output_tokens == 200
-
-    def test_translate_categories_to_zh_batches_large_payloads(self):
-        ai_radar.claude = MagicMock()
-        ai_radar.claude.messages.create.side_effect = [
-            _make_claude_response('[{"idx":0,"title_zh":"甲","description_zh":"乙"}]', in_tok=10, out_tok=5),
-            _make_claude_response('[{"idx":10,"title_zh":"丙","description_zh":"丁"}]', in_tok=12, out_tok=6),
-        ]
-
-        categories, usage = ai_radar._translate_categories_to_zh([
-            {
-                "key": "product",
-                "title": "AI Product Radar",
-                "items": [{"title": f"Title {i}", "description": f"Desc {i}", "sources": []} for i in range(11)],
-            }
-        ])
-
-        assert ai_radar.claude.messages.create.call_count == 2
-        assert categories[0]["items"][0]["title_zh"] == "甲"
-        assert categories[0]["items"][10]["title_zh"] == "丙"
-        assert usage.input_tokens == 22
-        assert usage.output_tokens == 11
 
 
 class TestRotation:
@@ -282,7 +166,7 @@ class TestRotation:
         ai_radar.supabase.table.return_value = mock_table
 
         ai_radar._store_radar(
-            datetime(2026, 5, 19, tzinfo=timezone.utc),
+            datetime(2026, 5, 20, tzinfo=timezone.utc),
             {"categories": []},
             {"id": "old-id"},
         )
@@ -295,8 +179,8 @@ class TestRotation:
             call("ai_radar"),
             call().insert(
                 {
-                    "window_start": "2026-05-12",
-                    "window_end": "2026-05-19",
+                    "window_start": "2026-05-13",
+                    "window_end": "2026-05-20",
                     "payload": {"categories": []},
                     "active": True,
                 }

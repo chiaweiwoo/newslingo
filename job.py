@@ -22,18 +22,16 @@ sys.stdout.reconfigure(encoding="utf-8")
 
 load_dotenv(override=True)
 
-SUPABASE_URL         = os.getenv("SUPABASE_URL")
+SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
-ANTHROPIC_API_KEY    = os.getenv("ANTHROPIC_API_KEY")
-DEEPSEEK_API_KEY     = os.getenv("DEEPSEEK_API_KEY")
-YOUTUBE_API_KEY      = os.getenv("YOUTUBE_API_KEY")
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
+YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
 os.environ.setdefault("LANGFUSE_HOST", os.getenv("LANGFUSE_BASE_URL", "https://cloud.langfuse.com"))
 
 if not DEEPSEEK_API_KEY:
     raise RuntimeError("DEEPSEEK_API_KEY is required for job.py")
 
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-claude   = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=120.0)
 deepseek = anthropic.Anthropic(
     api_key=DEEPSEEK_API_KEY,
     base_url="https://api.deepseek.com/anthropic",

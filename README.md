@@ -1,9 +1,9 @@
 # NewsLingo
 
-> Chinese & English bilingual news  
+> Chinese & English bilingual news
 > **Live: [newslingo.chiawei.me](https://newslingo.chiawei.me/)**
 
-Read Chinese news alongside English translations and follow current events while picking up natural English phrasing. Headlines from **Zaobao** and **Astro Ben Di Quan** are scraped every 3 hours, translated by Claude, and organised into International / Singapore / Malaysia tabs.
+Read Chinese news alongside English translations and follow current events while picking up natural English phrasing. Headlines from **Zaobao** and **Astro Ben Di Quan** are scraped every 3 hours, translated by DeepSeek, and organised into International / Singapore / Malaysia tabs.
 
 The translation pipeline self-improves: a quality-assessment step scores each batch, distils rules from mistakes, and feeds them back into the next translation run. A shared summary drawer combines **Top Stories** and **AI Radar**, both refreshed daily from the past 7 days.
 
@@ -45,7 +45,7 @@ The translation pipeline self-improves: a quality-assessment step scores each ba
 | Frontend | React + TypeScript, Chakra UI, Vite - deployed on Vercel |
 | Translation scoring | Transformers.js (`all-MiniLM-L6-v2`) - in-browser semantic similarity for quiz |
 | Backend | Python + `uv` |
-| AI | Claude Sonnet 4.6 (translate, assess, distil, weekly summary) · Claude Haiku 4.5 (Top Stories EN->ZH, AI Radar generation + translation) |
+| AI | DeepSeek V4 Flash (headline + summary translation) · DeepSeek V4 Pro (assessment + rule distillation) · Gemini 3.5 Flash (Top Stories + AI discovery and selection) |
 | Database | Supabase (Postgres) |
 | Observability | Langfuse Cloud - token counts, cost, latency, translation quality scores |
 | Jobs | GitHub Actions - aggregation every 3h, Top Stories daily at 09:00 SGT, AI Radar daily at 09:30 SGT |
@@ -62,24 +62,23 @@ flowchart LR
     end
 
     subgraph agg["job.py · every 3 hours"]
-        TR["Translate\nSonnet"]
-        AS["Assess 1-5\nSonnet"]
-        DR["Distil rules\nSonnet"]
+        TR["Translate\nDeepSeek Flash"]
+        AS["Assess 1-5\nDeepSeek Pro"]
+        DR["Distil rules\nDeepSeek Pro"]
         TR --> AS --> DR
     end
 
     DB[("Supabase")]
 
     subgraph summary["weekly_summary.py · daily 09:00 SGT"]
-        P1["Generate topics\nSonnet"]
-        P2["Fact-check\nSonnet"]
-        P3["EN->ZH\nHaiku"]
-        P1 --> P2 --> P3
+        P1["Discover + select\nGemini"]
+        P2["EN->ZH\nDeepSeek Flash"]
+        P1 --> P2
     end
 
     subgraph radar["ai_radar.py · daily 09:30 SGT"]
-        R1["Search + summarise\nHaiku"]
-        R2["Translate to ZH\nHaiku"]
+        R1["Search + summarise\nGemini"]
+        R2["Translate to ZH\nDeepSeek Flash"]
         R1 --> R2
     end
 
@@ -88,18 +87,16 @@ flowchart LR
     ZB & YT --> TR
     DR --> DB
     AS --> DB
-    DB --> P1
-    P3 --> DB
-    DB --> R1
+    P2 --> DB
     R2 --> DB
     DB --> FE
 ```
 
-**Aggregation (`job.py`):** scrapes Zaobao sitemaps and the Astro YouTube uploads playlist, translates headlines with Claude Sonnet, scores each translation 1-5, then distils failures into rules that improve the next run.
+**Aggregation (`job.py`):** scrapes Zaobao sitemaps and the Astro YouTube uploads playlist, translates headlines with DeepSeek Flash, scores each translation 1-5 with DeepSeek Pro, then distils failures into rules that improve the next run.
 
-**Top Stories (`weekly_summary.py`):** three-pass pipeline. Pass 1 generates topic clusters, Pass 2 fact-checks claims against source headlines and corrects tense, and Pass 3 (Haiku) translates titles and summaries into Simplified Chinese.
+**Top Stories (`weekly_summary.py`):** Gemini 3.5 Flash discovers and ranks important stories from the open web across International, Singapore, and Malaysia, then DeepSeek Flash translates the final topics into Simplified Chinese.
 
-**AI Radar (`ai_radar.py`):** daily AI-specific search-and-summarise job across governance, product, and infrastructure. It uses Anthropic web search, generates English summaries, then adds Simplified Chinese fields for the shared drawer.
+**AI Radar (`ai_radar.py`):** daily AI-specific search-and-summarise job across governance, product, and infrastructure. Gemini 3.5 Flash handles grounded discovery, then DeepSeek Flash adds Simplified Chinese fields for the shared drawer.
 
 ---
 
@@ -107,7 +104,8 @@ flowchart LR
 
 | API | Purpose |
 |---|---|
-| [Anthropic Claude](https://anthropic.com) | Translation, assessment, distillation, Top Stories summary, AI Radar |
+| [Google Gemini API](https://ai.google.dev/) | Top Stories discovery/selection and AI Radar discovery/selection |
+| [DeepSeek API](https://platform.deepseek.com/) | Headline translation, assessment, distillation, and Chinese translation passes |
 | [YouTube Data API v3](https://developers.google.com/youtube/v3) | Fetch Astro Ben Di Quan uploads |
 | [Supabase](https://supabase.com) | Database + REST API |
 | [Langfuse](https://langfuse.com) | LLM observability - cost, latency, translation quality scores |
@@ -122,15 +120,15 @@ flowchart LR
 
 **Prerequisites:** Python 3.12+, Node 18+, `uv` ([install](https://docs.astral.sh/uv/))
 
-Copy `.env.example` -> `.env` and `frontend/.env.example` -> `frontend/.env` and fill in your Supabase, Anthropic, YouTube, and Langfuse keys.
+Copy `.env.example` -> `.env` and `frontend/.env.example` -> `frontend/.env` and fill in your Supabase, Gemini, DeepSeek, YouTube, and Langfuse keys.
 
 ```bash
 # Backend
 uv sync
-uv run job.py                # run one aggregation cycle
-uv run weekly_summary.py     # run Top Stories summary
-uv run ai_radar.py           # run AI Radar summary
-uv run pytest -v             # run tests
+uv run job.py
+uv run weekly_summary.py
+uv run ai_radar.py
+uv run python -m pytest -q
 
 # Frontend
 cd frontend
@@ -138,4 +136,4 @@ npm install
 npm run dev
 ```
 
-Tests cover: URL->category mapping, scraper output schema, Claude JSON parsing, architectural invariants, Top Stories three-pass pipeline, AI Radar parsing/rotation/translation behavior, and translation assessment logic.
+Tests cover: URL->category mapping, scraper output schema, JSON parsing, architectural invariants, Top Stories search-and-translate flow, AI Radar parsing/rotation/translation behavior, and translation assessment logic.

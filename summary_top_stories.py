@@ -44,12 +44,13 @@ deepseek = anthropic.Anthropic(
     timeout=120.0,
 )
 
-SUMMARY_DISCOVERY_MODEL = "gemini-3.5-flash"
-SUMMARY_MODEL = "gemini-3.5-flash"
+SUMMARY_DISCOVERY_MODEL = "gemini-2.5-flash-lite"
+SUMMARY_MODEL = "gemini-2.5-flash"
 SUMMARY_TRANSLATION_MODEL = "deepseek-v4-flash"
 LOOKBACK_DAYS = 7
 MIN_NEW_HEADLINES = 30
-SUMMARY_MAX_TOKENS = 6000
+SUMMARY_DISCOVERY_MAX_TOKENS = 1800
+SUMMARY_SELECTION_MAX_TOKENS = 1200
 SUMMARY_TRANSLATION_MAX_TOKENS = 2200
 SUMMARY_REPAIR_MODEL = "deepseek-v4-flash"
 SUMMARY_REPAIR_SYSTEM_PROMPT = (
@@ -96,6 +97,44 @@ VALID_REGIONS = {"International", "Singapore", "Malaysia"}
 VALID_THEMES = set(THEMES)
 
 DISCOVERY_TOOL = genai_types.Tool(google_search=genai_types.GoogleSearch())
+DISCOVERY_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "items": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string"},
+                    "summary": {"type": "string"},
+                    "region": {"type": "string"},
+                    "theme": {"type": "string"},
+                },
+                "required": ["title", "summary", "region", "theme"],
+            },
+        }
+    },
+    "required": ["items"],
+}
+SELECTION_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "topics": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string"},
+                    "summary": {"type": "string"},
+                    "region": {"type": "string"},
+                    "theme": {"type": "string"},
+                },
+                "required": ["title", "summary", "region", "theme"],
+            },
+        }
+    },
+    "required": ["topics"],
+}
 
 REGION_DISCOVERY_SPECS = [
     {
@@ -143,6 +182,7 @@ DISCOVERY_SYSTEM_PROMPT = (
     "  - Include only developments from the last 7 days.\n"
     "  - Prefer concrete impact over commentary, ceremony, entertainment, sports, and trivia.\n"
     "  - Keep titles and summaries in English only.\n"
+    "  - Do not include citations, URLs, source lists, or extra keys.\n"
     "  - Do not invent facts, figures, or named entities.\n"
     "  - If fewer stories meet the standard, return fewer items rather than padding.\n"
     "  - Every item must use one valid region and one valid theme.\n\n"
@@ -179,6 +219,7 @@ SELECTION_SYSTEM_PROMPT = (
     "FACTUAL DISCIPLINE:\n"
     "  - Use only the candidate list provided.\n"
     "  - Do not add new facts beyond the candidate summaries.\n"
+    "  - Do not include citations, URLs, source lists, or extra keys.\n"
     "  - If a candidate seems weak or ambiguous, exclude it rather than guessing.\n"
     "  - Keep the tense consistent with the candidate summary.\n\n"
     "SELF-CHECK BEFORE RETURNING:\n"
@@ -451,10 +492,12 @@ def _call_gemini_json(
     *,
     use_search: bool,
     max_output_tokens: int,
+    response_schema: dict,
 ) -> tuple[str, types.SimpleNamespace]:
     config = genai_types.GenerateContentConfig(
         system_instruction=system_prompt,
         response_mime_type="application/json",
+        response_schema=response_schema,
         max_output_tokens=max_output_tokens,
         tools=[DISCOVERY_TOOL] if use_search else None,
     )
@@ -525,7 +568,8 @@ def _call_summary(today_utc: datetime) -> tuple[dict, object]:
             DISCOVERY_SYSTEM_PROMPT,
             user_prompt,
             use_search=True,
-            max_output_tokens=SUMMARY_MAX_TOKENS,
+            max_output_tokens=SUMMARY_DISCOVERY_MAX_TOKENS,
+            response_schema=DISCOVERY_RESPONSE_SCHEMA,
         )
         total_input += usage.input_tokens
         total_output += usage.output_tokens
@@ -550,7 +594,8 @@ def _call_summary(today_utc: datetime) -> tuple[dict, object]:
         SELECTION_SYSTEM_PROMPT,
         selection_user_prompt,
         use_search=False,
-        max_output_tokens=SUMMARY_MAX_TOKENS,
+        max_output_tokens=SUMMARY_SELECTION_MAX_TOKENS,
+        response_schema=SELECTION_RESPONSE_SCHEMA,
     )
     total_input += usage.input_tokens
     total_output += usage.output_tokens

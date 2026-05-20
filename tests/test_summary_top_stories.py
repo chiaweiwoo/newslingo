@@ -30,8 +30,8 @@ class TestConstants:
         assert summary_top_stories.LOOKBACK_DAYS == 7
 
     def test_models_routed_to_gemini_and_deepseek(self):
-        assert summary_top_stories.SUMMARY_DISCOVERY_MODEL == "gemini-3.5-flash"
-        assert summary_top_stories.SUMMARY_MODEL == "gemini-3.5-flash"
+        assert summary_top_stories.SUMMARY_DISCOVERY_MODEL == "gemini-2.5-flash-lite"
+        assert summary_top_stories.SUMMARY_MODEL == "gemini-2.5-flash"
         assert summary_top_stories.SUMMARY_TRANSLATION_MODEL == "deepseek-v4-flash"
 
 
@@ -48,12 +48,18 @@ class TestPromptContracts:
         assert '"items"' in prompt
         assert "Return ONLY the JSON object" in prompt
         assert "last 7 days" in prompt
+        assert "Do not include citations, URLs, source lists, or extra keys." in prompt
 
     def test_selection_prompt_requires_topics_schema(self):
         prompt = summary_top_stories.SELECTION_SYSTEM_PROMPT
         assert '"topics"' in prompt
         assert "8 to 10 total topics" in prompt
         assert "Return ONLY the JSON object" in prompt
+        assert "Do not include citations, URLs, source lists, or extra keys." in prompt
+
+    def test_response_schemas_match_expected_shapes(self):
+        assert summary_top_stories.DISCOVERY_RESPONSE_SCHEMA["required"] == ["items"]
+        assert summary_top_stories.SELECTION_RESPONSE_SCHEMA["required"] == ["topics"]
 
 class TestCallSummary:
     def test_call_summary_runs_three_discoveries_then_selects_and_translates(self):
@@ -126,8 +132,8 @@ class TestRotation:
             call("weekly_summary"),
             call().insert(
                 {
-                    "window_start": "2026-05-13",
-                    "window_end": "2026-05-20",
+                    "week_start": "2026-05-13",
+                    "week_end": "2026-05-20",
                     "payload": {"topics": []},
                     "active": True,
                 }

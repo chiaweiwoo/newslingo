@@ -38,8 +38,8 @@ def _make_deepseek_response(text: str, in_tok: int = 100, out_tok: int = 200):
 
 class TestModelAndPromptConfig:
     def test_models_use_gemini_and_deepseek(self):
-        assert summary_ai.AI_RADAR_MODEL == "gemini-3.5-flash"
-        assert summary_ai.AI_RADAR_DISCOVERY_MODEL == "gemini-3.5-flash"
+        assert summary_ai.AI_RADAR_MODEL == "gemini-2.5-flash-lite"
+        assert summary_ai.AI_RADAR_DISCOVERY_MODEL == "gemini-2.5-flash-lite"
         assert summary_ai.AI_RADAR_TRANSLATION_MODEL == "deepseek-v4-flash"
 
     def test_translation_prompt_contract_present(self):
@@ -52,6 +52,10 @@ class TestModelAndPromptConfig:
         prompt = summary_ai.AI_RADAR_SYSTEM_PROMPT
         assert "last 7 days" in prompt
         assert "Return ONLY the JSON object" in prompt
+        assert "Do not include citations, sources, URLs, or extra keys." in prompt
+
+    def test_ai_response_schema_is_minimal(self):
+        assert summary_ai.AI_RADAR_RESPONSE_SCHEMA["required"] == ["items"]
 
 
 class TestJsonParsing:

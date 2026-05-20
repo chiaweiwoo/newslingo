@@ -44,11 +44,11 @@ deepseek = anthropic.Anthropic(
     timeout=120.0,
 )
 
-AI_RADAR_DISCOVERY_MODEL = "gemini-3.5-flash"
-AI_RADAR_MODEL = "gemini-3.5-flash"
+AI_RADAR_DISCOVERY_MODEL = "gemini-2.5-flash-lite"
+AI_RADAR_MODEL = "gemini-2.5-flash-lite"
 AI_RADAR_TRANSLATION_MODEL = "deepseek-v4-flash"
 LOOKBACK_DAYS = 7
-AI_RADAR_MAX_TOKENS = 3000
+AI_RADAR_MAX_TOKENS = 1500
 AI_RADAR_TRANSLATION_MAX_TOKENS = 2200
 AI_RADAR_TRANSLATION_BATCH_SIZE = 10
 AI_RADAR_REPAIR_MODEL = "deepseek-v4-flash"
@@ -91,6 +91,23 @@ def _repair_json_with_deepseek(body: str) -> str | None:
         return None
 
 DISCOVERY_TOOL = genai_types.Tool(google_search=genai_types.GoogleSearch())
+AI_RADAR_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "items": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string"},
+                    "description": {"type": "string"},
+                },
+                "required": ["title", "description"],
+            },
+        }
+    },
+    "required": ["items"],
+}
 
 CATEGORY_SPECS = [
     {
@@ -137,7 +154,8 @@ AI_RADAR_SYSTEM_PROMPT = (
     "  - Prefer strategic, operational, financial, political, legal, or social impact.\n"
     "  - Avoid duplicates, minor follow-ons, and hype.\n"
     "  - If the category is quiet, return fewer items rather than padding.\n"
-    "  - Keep all fields in English only.\n\n"
+    "  - Keep all fields in English only.\n"
+    "  - Do not include citations, sources, URLs, or extra keys.\n\n"
     "SELF-CHECK BEFORE RETURNING:\n"
     "  - Confirm the output is valid JSON with exactly one top-level key: items.\n"
     "  - Confirm every item has title and description.\n"
@@ -341,10 +359,12 @@ def _call_gemini_json(
     *,
     use_search: bool,
     max_output_tokens: int,
+    response_schema: dict,
 ) -> tuple[str, types.SimpleNamespace]:
     config = genai_types.GenerateContentConfig(
         system_instruction=system_prompt,
         response_mime_type="application/json",
+        response_schema=response_schema,
         max_output_tokens=max_output_tokens,
         tools=[DISCOVERY_TOOL] if use_search else None,
     )
@@ -410,11 +430,12 @@ def _call_category(category: dict, today_utc: datetime) -> tuple[dict, object]:
         f"Focus only on this category: {category['focus']}"
     )
     body, usage = _call_gemini_json(
-        AI_RADAR_MODEL,
+        AI_RADAR_DISCOVERY_MODEL,
         AI_RADAR_SYSTEM_PROMPT,
         user_prompt,
         use_search=True,
         max_output_tokens=AI_RADAR_MAX_TOKENS,
+        response_schema=AI_RADAR_RESPONSE_SCHEMA,
     )
     items = _normalize_items(_parse_items_payload(body))
     return {

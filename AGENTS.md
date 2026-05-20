@@ -266,6 +266,8 @@ Always flush Langfuse before process exit.
 - **AI summary fails immediately** -> check `ANTHROPIC_API_KEY`, `DEEPSEEK_API_KEY`, and Anthropic web search tool behavior
 - **DeepSeek call fails immediately** -> check `DEEPSEEK_API_KEY` and Anthropic-compatible endpoint
 - **Scheduled workflow runs stale code** -> dispatch happened before push reached `main`
+- **Workflow YAML shows fake Ruff syntax errors** -> do not run `ruff` directly against `.yml` / `.yaml`; Ruff parses them as Python
+- **`git commit` fails with `.git/index.lock`** -> check for another short-lived `git` process first, then retry once it exits
 
 ---
 

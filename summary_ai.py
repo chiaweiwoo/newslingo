@@ -1,21 +1,20 @@
 """
-NewsLingo AI Radar job - runs daily at 09:30 SGT.
+NewsLingo AI summary job - runs daily at 09:30 SGT.
 
-This job uses Gemini with Google Search grounding to discover important AI
-developments across governance, product, and infrastructure, then uses
-DeepSeek to translate the final payload into Simplified Chinese.
+This version restores Claude web search for broad AI coverage, then uses
+DeepSeek Flash to translate the final items into Simplified Chinese.
 """
 
 import json
 import os
+import re
 import sys
+import time
 import types
 from datetime import datetime, timedelta, timezone
 
 import anthropic
 from dotenv import load_dotenv
-from google import genai
-from google.genai import types as genai_types
 from langfuse import get_client as _langfuse_client
 from langfuse import observe
 
@@ -27,87 +26,40 @@ load_dotenv(override=True)
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")  # kept for future experiments
 os.environ.setdefault("LANGFUSE_HOST", os.getenv("LANGFUSE_BASE_URL", "https://cloud.langfuse.com"))
 
+if not ANTHROPIC_API_KEY:
+    raise RuntimeError("ANTHROPIC_API_KEY is required for summary_ai.py")
 if not DEEPSEEK_API_KEY:
     raise RuntimeError("DEEPSEEK_API_KEY is required for summary_ai.py")
-if not GEMINI_API_KEY:
-    raise RuntimeError("GEMINI_API_KEY is required for summary_ai.py")
 
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-gemini = genai.Client(api_key=GEMINI_API_KEY)
+claude = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=180.0)
 deepseek = anthropic.Anthropic(
     api_key=DEEPSEEK_API_KEY,
     base_url="https://api.deepseek.com/anthropic",
     timeout=120.0,
 )
 
-AI_RADAR_DISCOVERY_MODEL = "gemini-3.5-flash"
-AI_RADAR_MODEL = "gemini-3.5-flash"
-AI_RADAR_FALLBACK_MODEL = "gemini-3.5-flash"
+AI_RADAR_MODEL = "claude-haiku-4-5"
+AI_RADAR_FALLBACK_MODEL = "claude-sonnet-4-6"
 AI_RADAR_TRANSLATION_MODEL = "deepseek-v4-flash"
 LOOKBACK_DAYS = 7
-AI_RADAR_MAX_TOKENS = 1500
+WEB_SEARCH_MAX_USES = 3
+AI_RADAR_MAX_TOKENS = 2600
 AI_RADAR_TRANSLATION_MAX_TOKENS = 2200
 AI_RADAR_TRANSLATION_BATCH_SIZE = 10
-AI_RADAR_REPAIR_MODEL = "deepseek-v4-flash"
-AI_RADAR_REPAIR_SYSTEM_PROMPT = (
-    "You are a JSON repair specialist. You will receive a malformed or truncated JSON response from another AI model.\n"
-    "Your goal is to fix the JSON structure so it can be parsed, preserving as much content as possible.\n\n"
-    "Rules:\n"
-    "- If the JSON is truncated, close any open strings, arrays, or objects.\n"
-    "- If the JSON is malformed (e.g. missing brackets), correct the syntax.\n"
-    "- Return ONLY the valid JSON object. No preamble, no explanation, no markdown fences.\n"
-    "- If the content is unsalvageable, return an empty items list: {\"items\": []}"
-)
+RATE_LIMIT_RETRIES = 3
+RATE_LIMIT_SLEEP_SECONDS = 20
 THINKING_DISABLED = {"type": "disabled"}
-
-
-def _repair_json_with_deepseek(body: str) -> str | None:
-    """Fallback: use DeepSeek to fix malformed or truncated JSON."""
-    try:
-        msg = deepseek.messages.create(
-            model=AI_RADAR_REPAIR_MODEL,
-            max_tokens=1500,
-            system=AI_RADAR_REPAIR_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": body}],
-            thinking=THINKING_DISABLED,
-        )
-
-        raw = ""
-        for block in getattr(msg, "content", []) or []:
-            if getattr(block, "type", None) == "text":
-                raw += getattr(block, "text", "")
-
-        # Use extraction on DeepSeek's output too, just in case
-        first = raw.find("{")
-        last = raw.rfind("}")
-        if first != -1 and last != -1 and last > first:
-            return raw[first : last + 1]
-        return raw if raw.strip() else None
-    except Exception as e:
-        print(f"  [ai-radar] DeepSeek repair failed: {e}", flush=True)
-        return None
-
-DISCOVERY_TOOL = genai_types.Tool(google_search=genai_types.GoogleSearch())
-AI_RADAR_RESPONSE_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "items": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "title": {"type": "string"},
-                    "description": {"type": "string"},
-                },
-                "required": ["title", "description"],
-            },
-        }
-    },
-    "required": ["items"],
+WEB_SEARCH_TOOL = {
+    "type": "web_search_20260209",
+    "name": "web_search",
+    "max_uses": WEB_SEARCH_MAX_USES,
+    "allowed_callers": ["direct"],
 }
 
 CATEGORY_SPECS = [
@@ -115,53 +67,87 @@ CATEGORY_SPECS = [
         "key": "governance",
         "title": "AI Governance Radar",
         "focus": (
-            "AI incidents, failures, harmful behavior, lawsuits, copyright disputes, governance breakdowns, "
-            "public backlash, enforcement actions, enterprise AI mistakes, and major policy or regulatory actions."
+            "AI incidents, harmful behavior, failures, lawsuits, copyright disputes, "
+            "enforcement, policy, regulation, operational breakdowns, and public backlash."
         ),
     },
     {
         "key": "product",
         "title": "AI Product Radar",
         "focus": (
-            "Major product launches, feature releases, agents, copilots, strategy shifts, enterprise workflow changes, "
-            "adoption signals, and meaningful user experience improvements."
+            "Major launches, feature releases, agents, copilots, product strategy shifts, "
+            "enterprise workflow changes, adoption signals, and meaningful UX improvements."
         ),
     },
     {
         "key": "infrastructure",
         "title": "AI Infrastructure Radar",
         "focus": (
-            "GPUs, AI chips, datacenters, cloud AI infrastructure, inference optimization, compute shortages, "
-            "energy and cooling issues, and model efficiency breakthroughs."
+            "GPUs, AI chips, datacenters, cloud AI capacity, inference optimization, compute shortages, "
+            "energy and cooling issues, and efficiency breakthroughs."
         ),
     },
 ]
 
 AI_RADAR_SYSTEM_PROMPT = (
     "You are a senior AI radar analyst preparing a concise briefing for busy professionals.\n"
-    "Use Google Search grounding to discover a broad but useful set of important AI developments from the last 7 days.\n"
-    "You will handle exactly one category per request.\n\n"
+    "Your job is to extract the most important AI developments from the last 7 days using web search.\n\n"
+    "You will handle exactly ONE category per request, specified in the user message.\n\n"
+    "WINDOW:\n"
+    "  - Include only developments from the last 7 days relative to the current date.\n"
+    "  - If a development falls outside the window, exclude it.\n"
+    "  - Use searched and cited sources only. Do not rely on background knowledge alone.\n\n"
+    "SELECTION STANDARD:\n"
+    "  - Include all materially important items that pass the bar, not just a single top story.\n"
+    "  - Prefer strategic, operational, financial, political, legal, or social significance.\n"
+    "  - Prefer concrete real-world impact over hype or speculation.\n"
+    "  - Avoid duplicates, incremental minor updates, and repetitive follow-ons.\n"
+    "  - If two stories are materially the same development, merge them into one stronger item.\n\n"
+    "OUTPUT SIZE:\n"
+    "  - Return as many qualifying items as fit within the response budget.\n"
+    "  - Do not stop at a fixed count if more strong items exist.\n"
+    "  - Return an empty items array only if the category is truly quiet after searching.\n\n"
+    "ITEM RULES:\n"
+    "  - title: short English title, no hype, no date\n"
+    "  - description: one very concise English sentence, about 8 to 14 words, information-dense, no date\n"
+    "  - sources: 1 to 2 source objects pulled from the searched/cited material\n"
+    "  - Each source object must contain exactly: title, url\n"
+    "  - Prefer primary sources first; use strong reporting sources when primary sources are unavailable.\n\n"
     "OUTPUT FORMAT:\n"
     "{\n"
     '  "items": [\n'
     "    {\n"
-    '      "title": "Short English title",\n'
-    '      "description": "One concise English sentence, about 8 to 14 words"\n'
+    '      "title": "Short title",\n'
+    '      "description": "One concise explanation.",\n'
+    '      "sources": [{"title": "Source title", "url": "https://example.com"}]\n'
     "    }\n"
     "  ]\n"
     "}\n\n"
-    "RULES:\n"
-    "  - Include only developments from the last 7 days.\n"
-    "  - Prefer strategic, operational, financial, political, legal, or social impact.\n"
-    "  - Avoid duplicates, minor follow-ons, and hype.\n"
-    "  - Gather broadly enough to preserve meaningful coverage within this category.\n"
-    "  - If the category is quiet, it is acceptable to return fewer items, but do not over-prune.\n"
-    "  - Keep all fields in English only.\n"
-    "  - Do not include citations, sources, URLs, or extra keys.\n\n"
+    "REQUIRED SHAPE:\n"
+    "  - Return exactly one JSON object with one top-level key: items.\n"
+    "  - If the category has no qualifying items, return an empty items array.\n"
+    "  - Do not include inline citation markup such as <cite ...>...</cite> anywhere in the JSON.\n"
+    "  - Return only valid JSON.\n\n"
+    "FACTUAL DISCIPLINE:\n"
+    "  - Do not invent company actions, product details, legal outcomes, or infrastructure numbers.\n"
+    "  - Every factual claim must be traceable to the searched and cited sources used in this run.\n"
+    "  - If a source is ambiguous, write around the uncertainty conservatively.\n"
+    "  - Do not include unsupported claims or unattributed rumors.\n\n"
+    "CONFIDENCE HEDGING:\n"
+    "  - If multiple reputable sources clearly support a claim, state it directly.\n"
+    "  - If a claim appears in only one credible report or remains partly uncertain, use cautious wording.\n"
+    "  - If you cannot support the core claim from searched and cited sources, omit the item entirely.\n\n"
+    "ESCALATION RULE:\n"
+    "  - If you cannot verify enough meaningful items for a category, return fewer items rather than guessing.\n"
+    "  - Return an empty items array only if you genuinely cannot find even one strong, sourced item.\n"
+    "  - If a source link is missing or unreliable, exclude that item rather than fabricating a citation.\n\n"
+    "LANGUAGE:\n"
+    "  - Write all item titles, descriptions, and source titles in English only.\n\n"
     "SELF-CHECK BEFORE RETURNING:\n"
-    "  - Confirm the output is valid JSON with exactly one top-level key: items.\n"
-    "  - Confirm every item has title and description.\n"
-    "  - Confirm every item is grounded in searched material from the last 7 days.\n\n"
+    "  - Confirm the response is valid JSON with exactly one top-level key: items.\n"
+    "  - Confirm each item has title, description, and sources.\n"
+    "  - Confirm every source has title and url.\n"
+    "  - Confirm every item is supported by searched/cited sources from the last 7 days.\n\n"
     "Return ONLY the JSON object. No preamble, no explanation, no markdown fences."
 )
 
@@ -187,231 +173,44 @@ AI_RADAR_TRANSLATION_SYSTEM_PROMPT = (
 
 def _extract_json_object(text: str) -> str | None:
     first = text.find("{")
-    if first == -1:
+    last = text.rfind("}")
+    if first == -1 or last == -1 or last <= first:
         return None
-
-    body = text[first:]
-
-    # Try standard rfind approach first
-    last = body.rfind("}")
-    if last != -1:
-        candidate = body[: last + 1]
-        try:
-            json.loads(candidate)
-            return candidate
-        except json.JSONDecodeError:
-            pass
-
-    # Repair logic for truncated JSON:
-    # We try to find the longest valid prefix by iteratively shortening the string
-    # and attempting to close the braces/brackets.
-    for i in range(len(body), 0, -1):
-        candidate_body = body[:i]
-
-        # Quick check: if we're in the middle of a string, close it
-        # (This is a heuristic, but good enough for news summaries)
-        stack = []
-        in_string = False
-        escaped = False
-        for char in candidate_body:
-            if escaped:
-                escaped = False
-                continue
-            if char == "\\":
-                escaped = True
-                continue
-            if char == '"':
-                in_string = not in_string
-                continue
-            if not in_string:
-                if char == "{":
-                    stack.append("}")
-                elif char == "[":
-                    stack.append("]")
-                elif char == "}":
-                    if stack and stack[-1] == "}":
-                        stack.pop()
-                elif char == "]":
-                    if stack and stack[-1] == "]":
-                        stack.pop()
-
-        repaired = candidate_body
-        if in_string:
-            repaired += '"'
-
-        # Basic cleanup: remove trailing commas or incomplete tokens before closing
-        repaired = repaired.strip()
-        while repaired and repaired[-1] in (",", "[", "{", ":", " "):
-            repaired = repaired[:-1].strip()
-
-        if stack:
-            repaired += "".join(reversed(stack))
-
-        try:
-            json.loads(repaired)
-            return repaired
-        except json.JSONDecodeError:
-            continue
-
-    return None
+    return text[first:last + 1]
 
 
 def _extract_json_array(text: str) -> str | None:
     first = text.find("[")
-    if first == -1:
+    last = text.rfind("]")
+    if first == -1 or last == -1 or last <= first:
         return None
-
-    body = text[first:]
-
-    # Standard rfind
-    last = body.rfind("]")
-    if last != -1:
-        candidate = body[: last + 1]
-        try:
-            json.loads(candidate)
-            return candidate
-        except json.JSONDecodeError:
-            pass
-
-    # Basic repair
-    stack = []
-    in_string = False
-    escaped = False
-    for char in body:
-        if escaped:
-            escaped = False
-            continue
-        if char == "\\":
-            escaped = True
-            continue
-        if char == '"':
-            in_string = not in_string
-            continue
-        if not in_string:
-            if char == "[":
-                stack.append("]")
-            elif char == "{":
-                stack.append("}")
-            elif char == "]":
-                if stack and stack[-1] == "]":
-                    stack.pop()
-            elif char == "}":
-                if stack and stack[-1] == "}":
-                    stack.pop()
-
-    repaired = body
-    if in_string:
-        repaired += '"'
-    else:
-        repaired = repaired.rstrip().rstrip(",")
-
-    if stack:
-        repaired += "".join(reversed(stack))
-
-    try:
-        json.loads(repaired)
-        return repaired
-    except json.JSONDecodeError:
-        return None
+    return text[first:last + 1]
 
 
-def _gemini_text(response: object) -> str:
-    text = getattr(response, "text", None)
-    if text:
-        return text
+def _strip_citation_markup(text: str) -> str:
+    return re.sub(r"<cite\b[^>]*>.*?</cite>", "", text, flags=re.IGNORECASE | re.DOTALL)
 
+
+def _assistant_text(message: object) -> str:
     parts: list[str] = []
-    for candidate in getattr(response, "candidates", []) or []:
-        content = getattr(candidate, "content", None)
-        for part in getattr(content, "parts", []) or []:
-            maybe = getattr(part, "text", None)
-            if maybe:
-                parts.append(maybe)
+    for block in getattr(message, "content", []) or []:
+        if getattr(block, "type", None) == "text":
+            parts.append(getattr(block, "text", ""))
     return "\n".join(parts).strip()
 
 
-def _gemini_usage(response: object) -> types.SimpleNamespace:
-    usage = getattr(response, "usage_metadata", None)
-    input_tokens = (
-        getattr(usage, "prompt_token_count", 0)
-        or getattr(usage, "input_token_count", 0)
-        or getattr(usage, "total_token_count", 0)
-        or 0
-    )
-    output_tokens = (
-        getattr(usage, "candidates_token_count", 0)
-        or getattr(usage, "output_token_count", 0)
-        or 0
-    )
-    return types.SimpleNamespace(input_tokens=input_tokens, output_tokens=output_tokens)
-
-
-def _deepseek_usage(message: object) -> types.SimpleNamespace:
-    usage = getattr(message, "usage", None)
-    return types.SimpleNamespace(
-        input_tokens=getattr(usage, "input_tokens", 0) or 0,
-        output_tokens=getattr(usage, "output_tokens", 0) or 0,
-    )
-
-
-def _call_gemini_json(
-    model: str,
-    system_prompt: str,
-    user_prompt: str,
-    *,
-    use_search: bool,
-    max_output_tokens: int,
-    response_schema: dict,
-) -> tuple[str, types.SimpleNamespace]:
-    config_kwargs = {
-        "system_instruction": system_prompt,
-        "max_output_tokens": max_output_tokens,
-        "tools": [DISCOVERY_TOOL] if use_search else None,
-    }
-    if not use_search:
-        config_kwargs["response_mime_type"] = "application/json"
-        config_kwargs["response_schema"] = response_schema
-
-    config = genai_types.GenerateContentConfig(**config_kwargs)
-    response = gemini.models.generate_content(
-        model=model,
-        contents=user_prompt,
-        config=config,
-    )
-    return _gemini_text(response), _gemini_usage(response)
-
-
 def _parse_items_payload(body: str) -> dict:
-    extracted = _extract_json_object(body)
-    if extracted:
+    candidates = [body, _strip_citation_markup(body)]
+    for candidate in candidates:
+        extracted = _extract_json_object(candidate)
+        if not extracted:
+            continue
         try:
             parsed = json.loads(extracted)
             if isinstance(parsed, dict) and isinstance(parsed.get("items"), list):
                 return parsed
         except json.JSONDecodeError:
-            pass
-
-    extracted_array = _extract_json_array(body)
-    if extracted_array:
-        try:
-            parsed = json.loads(extracted_array)
-            if isinstance(parsed, list):
-                return {"items": parsed}
-        except json.JSONDecodeError:
-            pass
-
-    # Fallback to DeepSeek repair
-    print("  [ai-radar] manual repair failed, attempting DeepSeek repair...", flush=True)
-    repaired = _repair_json_with_deepseek(body)
-    if repaired:
-        try:
-            parsed = json.loads(repaired)
-            if isinstance(parsed, dict) and isinstance(parsed.get("items"), list):
-                print("  [ai-radar] DeepSeek repair successful", flush=True)
-                return parsed
-        except json.JSONDecodeError:
-            pass
-
+            continue
     raise ValueError(f"[ai-radar] failed to parse JSON. Body (first 400): {body[:400]!r}")
 
 
@@ -427,6 +226,7 @@ def _normalize_items(payload: dict) -> list[dict]:
             {
                 "title": title,
                 "description": description,
+                "sources": item.get("sources", []),
             }
         )
     return normalized
@@ -436,60 +236,79 @@ def _normalize_payload(categories: list[dict]) -> dict:
     return {"categories": categories}
 
 
-def _call_category(category: dict, today_utc: datetime) -> tuple[dict, object]:
+def _deepseek_usage(message: object) -> types.SimpleNamespace:
+    usage = getattr(message, "usage", None)
+    return types.SimpleNamespace(
+        input_tokens=getattr(usage, "input_tokens", 0) or 0,
+        output_tokens=getattr(usage, "output_tokens", 0) or 0,
+    )
+
+
+def _is_rate_limit_error(exc: Exception) -> bool:
+    text = str(exc)
+    return "rate_limit_error" in text or "429" in text
+
+
+def _is_model_not_found_error(exc: Exception) -> bool:
+    text = str(exc)
+    return "not_found_error" in text or "model:" in text
+
+
+def _call_category(category: dict, today_utc: datetime, model: str) -> tuple[dict, object]:
     today_label = today_utc.date().isoformat()
     user_prompt = (
         f"Today's UTC date is {today_label}.\n"
-        f"Compile {category['title']} for the last {LOOKBACK_DAYS} days.\n"
-        f"Focus only on this category: {category['focus']}"
+        f"Search the web and compile {category['title']} for the last {LOOKBACK_DAYS} days.\n"
+        f"Focus only on this category: {category['focus']}\n"
+        "Use a small number of high-value searches. Return as many qualifying items as fit cleanly, "
+        "1 to 2 sources per item, and no inline citation tags. Prefer primary sources. Return the JSON object only."
     )
-    usage = types.SimpleNamespace(input_tokens=0, output_tokens=0)
-    items: list[dict] | None = None
-    last_error: Exception | None = None
 
-    for attempt, model in enumerate((AI_RADAR_DISCOVERY_MODEL, AI_RADAR_FALLBACK_MODEL), start=1):
+    for attempt in range(1, RATE_LIMIT_RETRIES + 1):
         try:
-            body, attempt_usage = _call_gemini_json(
-                model,
-                AI_RADAR_SYSTEM_PROMPT,
-                user_prompt,
-                use_search=True,
-                max_output_tokens=AI_RADAR_MAX_TOKENS,
-                response_schema=AI_RADAR_RESPONSE_SCHEMA,
+            msg = claude.messages.create(
+                model=model,
+                max_tokens=AI_RADAR_MAX_TOKENS,
+                system=AI_RADAR_SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": user_prompt}],
+                tools=[WEB_SEARCH_TOOL],
             )
-            usage.input_tokens += getattr(attempt_usage, "input_tokens", 0) or 0
-            usage.output_tokens += getattr(attempt_usage, "output_tokens", 0) or 0
-            parsed_payload = _parse_items_payload(body)
-            parsed_items = parsed_payload.get("items", []) if isinstance(parsed_payload, dict) else []
+
+            while getattr(msg, "stop_reason", None) == "pause_turn":
+                msg = claude.messages.create(
+                    model=model,
+                    max_tokens=AI_RADAR_MAX_TOKENS,
+                    system=AI_RADAR_SYSTEM_PROMPT,
+                    messages=[
+                        {"role": "user", "content": user_prompt},
+                        {"role": "assistant", "content": msg.content},
+                    ],
+                    tools=[WEB_SEARCH_TOOL],
+                )
+
+            parsed_payload = _parse_items_payload(_assistant_text(msg))
+            parsed_items = parsed_payload.get("items", [])
             items = _normalize_items(parsed_payload)
             print(
                 f"  [ai-radar] {category['key']} items: parsed={len(parsed_items)} normalized={len(items)}",
                 flush=True,
             )
-            if attempt > 1:
-                print(
-                    f"  [ai-radar] {category['key']} recovered with fallback model {model}",
-                    flush=True,
-                )
-            break
+            return {
+                "key": category["key"],
+                "title": category["title"],
+                "items": items,
+            }, msg.usage
         except Exception as exc:
-            last_error = exc
-            if attempt == 1:
-                print(
-                    f"  [ai-radar] {category['key']} failed on primary model {model}; retrying with {AI_RADAR_FALLBACK_MODEL}",
-                    flush=True,
-                )
-            else:
+            if not _is_rate_limit_error(exc) or attempt == RATE_LIMIT_RETRIES:
                 raise
+            sleep_for = RATE_LIMIT_SLEEP_SECONDS * attempt
+            print(
+                f"[ai-radar] rate limited during {category['key']} attempt {attempt}/{RATE_LIMIT_RETRIES}; sleeping {sleep_for}s",
+                flush=True,
+            )
+            time.sleep(sleep_for)
 
-    if items is None:
-        raise last_error or RuntimeError(f"[ai-radar] {category['key']} failed without a parseable response")
-
-    return {
-        "key": category["key"],
-        "title": category["title"],
-        "items": items,
-    }, usage
+    raise RuntimeError(f"[ai-radar] exhausted retries for {category['key']}")
 
 
 def _translate_categories_to_zh(categories: list[dict]) -> tuple[list[dict], object]:
@@ -526,11 +345,7 @@ def _translate_categories_to_zh(categories: list[dict]) -> tuple[list[dict], obj
         total_input += usage.input_tokens
         total_output += usage.output_tokens
 
-        raw = ""
-        for block in getattr(msg, "content", []) or []:
-            if getattr(block, "type", None) == "text":
-                raw += getattr(block, "text", "")
-
+        raw = _assistant_text(msg)
         extracted = _extract_json_array(raw)
         if not extracted:
             raise ValueError(
@@ -554,22 +369,42 @@ def _translate_categories_to_zh(categories: list[dict]) -> tuple[list[dict], obj
 
 @observe(name="ai-radar:generate", as_type="generation")
 def _call_ai_radar(today_utc: datetime) -> tuple[dict, object]:
-    categories = []
+    categories: list[dict] = []
     total_input = 0
     total_output = 0
+    model_in_use = AI_RADAR_MODEL
 
-    for spec in CATEGORY_SPECS:
-        result, usage = _call_category(spec, today_utc)
-        categories.append(result)
-        total_input += getattr(usage, "input_tokens", 0) or 0
-        total_output += getattr(usage, "output_tokens", 0) or 0
+    try:
+        for spec in CATEGORY_SPECS:
+            result, usage = _call_category(spec, today_utc, model_in_use)
+            categories.append(result)
+            total_input += getattr(usage, "input_tokens", 0) or 0
+            total_output += getattr(usage, "output_tokens", 0) or 0
+    except Exception as exc:
+        if not _is_model_not_found_error(exc):
+            raise
+
+        print(
+            f"[ai-radar] primary model {AI_RADAR_MODEL} unavailable; falling back to {AI_RADAR_FALLBACK_MODEL}",
+            flush=True,
+        )
+        model_in_use = AI_RADAR_FALLBACK_MODEL
+        categories = []
+        total_input = 0
+        total_output = 0
+
+        for spec in CATEGORY_SPECS:
+            result, usage = _call_category(spec, today_utc, model_in_use)
+            categories.append(result)
+            total_input += getattr(usage, "input_tokens", 0) or 0
+            total_output += getattr(usage, "output_tokens", 0) or 0
 
     categories, translation_usage = _translate_categories_to_zh(categories)
     total_input += getattr(translation_usage, "input_tokens", 0) or 0
     total_output += getattr(translation_usage, "output_tokens", 0) or 0
 
     _langfuse_client().update_current_generation(
-        model=AI_RADAR_MODEL,
+        model=model_in_use,
         usage_details={"input": total_input, "output": total_output},
     )
 
@@ -605,7 +440,7 @@ def _store_radar(now: datetime, payload: dict, previous: dict | None) -> None:
 
 
 def _main() -> None:
-    print("[ai-radar] NewsLingo AI Radar job starting", flush=True)
+    print("[ai-radar] NewsLingo AI summary job starting", flush=True)
 
     try:
         now = datetime.now(timezone.utc)
@@ -615,9 +450,9 @@ def _main() -> None:
         print(f"[ai-radar] total final items: {total_items}", flush=True)
         print(f"[ai-radar] generated {total_items} items across 3 categories", flush=True)
         _store_radar(now, payload, previous)
-        print("[ai-radar] AI Radar updated successfully", flush=True)
-    except Exception as e:
-        print(f"[ai-radar] ERROR: {e}", flush=True)
+        print("[ai-radar] AI summary updated successfully", flush=True)
+    except Exception as exc:
+        print(f"[ai-radar] ERROR: {exc}", flush=True)
         sys.exit(1)
 
 

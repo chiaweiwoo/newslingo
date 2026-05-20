@@ -12,187 +12,168 @@ from unittest.mock import MagicMock, call, patch
 sys.modules.setdefault("supabase", MagicMock())
 os.environ.setdefault("SUPABASE_URL", "https://fake.supabase.co")
 os.environ.setdefault("SUPABASE_SERVICE_KEY", "fake-key")
+os.environ.setdefault("ANTHROPIC_API_KEY", "fake-anthropic-key")
 os.environ.setdefault("DEEPSEEK_API_KEY", "fake-deepseek-key")
 os.environ.setdefault("GEMINI_API_KEY", "fake-gemini-key")
 
 with patch("supabase.create_client", return_value=MagicMock()):
     with patch("anthropic.Anthropic", return_value=MagicMock()):
-        with patch("google.genai.Client", return_value=MagicMock()):
-            import summary_ai
+        import summary_ai
 
 
-def _usage(input_tokens: int, output_tokens: int):
-    return types.SimpleNamespace(input_tokens=input_tokens, output_tokens=output_tokens)
-
-
-def _make_deepseek_response(text: str, in_tok: int = 100, out_tok: int = 200):
+def _make_claude_response(text: str, stop_reason: str = "end_turn", in_tok: int = 100, out_tok: int = 200):
     msg = MagicMock()
     block = MagicMock()
     block.type = "text"
     block.text = text
     msg.content = [block]
+    msg.stop_reason = stop_reason
     msg.usage.input_tokens = in_tok
     msg.usage.output_tokens = out_tok
     return msg
 
 
-class TestModelAndPromptConfig:
-    def test_models_use_gemini_and_deepseek(self):
-        assert summary_ai.AI_RADAR_MODEL == "gemini-3.5-flash"
-        assert summary_ai.AI_RADAR_DISCOVERY_MODEL == "gemini-3.5-flash"
-        assert summary_ai.AI_RADAR_FALLBACK_MODEL == "gemini-3.5-flash"
+class TestModelAndToolConfig:
+    def test_models_use_claude_and_deepseek(self):
+        assert summary_ai.AI_RADAR_MODEL == "claude-haiku-4-5"
+        assert summary_ai.AI_RADAR_FALLBACK_MODEL == "claude-sonnet-4-6"
         assert summary_ai.AI_RADAR_TRANSLATION_MODEL == "deepseek-v4-flash"
 
-    def test_translation_prompt_contract_present(self):
+    def test_web_search_tool_is_configured(self):
+        tool = summary_ai.WEB_SEARCH_TOOL
+        assert tool["type"] == "web_search_20260209"
+        assert tool["name"] == "web_search"
+        assert tool["max_uses"] == summary_ai.WEB_SEARCH_MAX_USES
+        assert tool["allowed_callers"] == ["direct"]
+
+
+class TestPromptContract:
+    def test_search_prompt_is_broad_and_json_only(self):
+        prompt = summary_ai.AI_RADAR_SYSTEM_PROMPT
+        assert '"sources"' in prompt
+        assert "Return as many qualifying items as fit" in prompt
+        assert "Return ONLY the JSON object" in prompt
+
+    def test_translation_prompt_is_json_array(self):
         prompt = summary_ai.AI_RADAR_TRANSLATION_SYSTEM_PROMPT
         assert '"title_zh"' in prompt
         assert '"description_zh"' in prompt
         assert "Return ONLY the JSON array" in prompt
 
-    def test_search_prompt_contract_present(self):
-        prompt = summary_ai.AI_RADAR_SYSTEM_PROMPT
-        assert "last 7 days" in prompt
-        assert "Return ONLY the JSON object" in prompt
-        assert "Do not include citations, sources, URLs, or extra keys." in prompt
-        assert "do not over-prune" in prompt.lower()
 
-    def test_ai_response_schema_is_minimal(self):
-        assert summary_ai.AI_RADAR_RESPONSE_SCHEMA["required"] == ["items"]
-
-
-class TestJsonParsing:
-    def test_extract_json_object_from_prose_output(self):
-        text = 'Here you go:\n{"items": []}\nDone.'
+class TestHelpers:
+    def test_extract_json_object_from_prose(self):
+        text = 'Here:\n{"items": []}\nDone.'
         assert summary_ai._extract_json_object(text) == '{"items": []}'
 
-    def test_extract_json_object_repairs_truncated_json(self):
-        text = '{"items": [{"title": "Truncated'
-        repaired = summary_ai._extract_json_object(text)
-        assert repaired == '{"items": [{"title": "Truncated"}]}'
-        assert json.loads(repaired) == {"items": [{"title": "Truncated"}]}
+    def test_parse_items_payload_strips_citation_markup(self):
+        raw = """```json
+{
+  "items": [
+    {
+      "title": "OpenAI Update",
+      "description": "<cite index="2-1">OpenAI launched a feature</cite> for enterprise users.",
+      "sources": [{"title": "OpenAI", "url": "https://example.com"}]
+    }
+  ]
+}
+```"""
+        payload = summary_ai._parse_items_payload(raw)
+        assert payload["items"][0]["description"] == " for enterprise users."
 
-    def test_parse_items_payload_accepts_valid_object(self):
-        payload = summary_ai._parse_items_payload('{"items": []}')
-        assert payload == {"items": []}
-
-    def test_parse_items_payload_accepts_top_level_array(self):
-        payload = summary_ai._parse_items_payload('[{"title": "A", "description": "B"}]')
-        assert payload == {"items": [{"title": "A", "description": "B"}]}
-
-    def test_normalize_items_filters_bad_rows(self):
+    def test_normalize_items_keeps_sources(self):
         items = summary_ai._normalize_items(
             {
                 "items": [
-                    {"title": "A", "description": "B"},
-                    {"title": "", "description": "B"},
+                    {"title": "A", "description": "B", "sources": [{"title": "S", "url": "u"}]},
+                    {"title": "", "description": "B", "sources": []},
                 ]
             }
         )
         assert len(items) == 1
-        assert items[0]["title"] == "A"
+        assert items[0]["sources"] == [{"title": "S", "url": "u"}]
 
 
 class TestCallAiRadar:
-    def test_call_category_uses_grounded_gemini(self):
-        with patch.object(
-            summary_ai,
-            "_call_gemini_json",
-            return_value=(
-                json.dumps({"items": [{"title": "A", "description": "B"}]}),
-                _usage(10, 5),
-            ),
-        ) as call_gemini:
-            result, usage = summary_ai._call_category(
-                summary_ai.CATEGORY_SPECS[0],
-                datetime(2026, 5, 20, tzinfo=timezone.utc),
-            )
+    def test_call_category_uses_claude_web_search(self):
+        summary_ai.claude = MagicMock()
+        summary_ai.claude.messages.create.return_value = _make_claude_response(
+            json.dumps({"items": [{"title": "A", "description": "B", "sources": []}]})
+        )
 
-        kwargs = call_gemini.call_args.kwargs
-        assert kwargs["use_search"] is True
+        result, usage = summary_ai._call_category(
+            summary_ai.CATEGORY_SPECS[0],
+            datetime(2026, 5, 20, tzinfo=timezone.utc),
+            summary_ai.AI_RADAR_MODEL,
+        )
+
+        kwargs = summary_ai.claude.messages.create.call_args.kwargs
+        assert kwargs["model"] == summary_ai.AI_RADAR_MODEL
+        assert kwargs["tools"] == [summary_ai.WEB_SEARCH_TOOL]
+        assert kwargs["max_tokens"] == summary_ai.AI_RADAR_MAX_TOKENS
         assert result["key"] == "governance"
-        assert usage.input_tokens == 10
+        assert usage.input_tokens == 100
 
-    def test_call_category_retries_with_fallback_model(self):
-        with patch.object(
-            summary_ai,
-            "_call_gemini_json",
-            side_effect=[
-                ValueError("bad primary payload"),
-                (
-                    json.dumps({"items": [{"title": "A", "description": "B"}]}),
-                    _usage(11, 6),
-                ),
-            ],
-        ) as call_gemini:
-            result, usage = summary_ai._call_category(
-                summary_ai.CATEGORY_SPECS[1],
-                datetime(2026, 5, 20, tzinfo=timezone.utc),
-            )
+    def test_call_category_handles_pause_turn(self):
+        summary_ai.claude = MagicMock()
+        first = _make_claude_response("Searching...", stop_reason="pause_turn")
+        second = _make_claude_response(json.dumps({"items": [{"title": "A", "description": "B", "sources": []}]}))
+        summary_ai.claude.messages.create.side_effect = [first, second]
 
-        assert [c.args[0] for c in call_gemini.call_args_list] == [
-            "gemini-3.5-flash",
-            "gemini-3.5-flash",
-        ]
-        assert result["key"] == "product"
-        assert usage.input_tokens == 11
-        assert usage.output_tokens == 6
+        result, _usage = summary_ai._call_category(
+            summary_ai.CATEGORY_SPECS[0],
+            datetime(2026, 5, 20, tzinfo=timezone.utc),
+            summary_ai.AI_RADAR_MODEL,
+        )
+
+        assert result["key"] == "governance"
+        assert summary_ai.claude.messages.create.call_count == 2
 
     def test_call_category_emits_count_logs(self):
-        with patch.object(
-            summary_ai,
-            "_call_gemini_json",
-            return_value=(
-                json.dumps({"items": [{"title": "A", "description": "B"}]}),
-                _usage(10, 5),
-            ),
-        ), patch("builtins.print") as mock_print:
+        summary_ai.claude = MagicMock()
+        summary_ai.claude.messages.create.return_value = _make_claude_response(
+            json.dumps({"items": [{"title": "A", "description": "B", "sources": []}]})
+        )
+
+        with patch("builtins.print") as mock_print:
             summary_ai._call_category(
                 summary_ai.CATEGORY_SPECS[0],
                 datetime(2026, 5, 20, tzinfo=timezone.utc),
+                summary_ai.AI_RADAR_MODEL,
             )
 
         printed = "\n".join(str(call.args[0]) for call in mock_print.call_args_list if call.args)
         assert "[ai-radar] governance items: parsed=1 normalized=1" in printed
 
-    def test_call_ai_radar_combines_category_results(self):
+    def test_call_ai_radar_falls_back_when_model_missing(self):
         with patch.object(
             summary_ai,
             "_call_category",
             side_effect=[
+                Exception("404 not_found_error model: claude-haiku-4-5"),
                 (
-                    {"key": "governance", "title": "AI Governance Radar", "items": [{"title": "A", "description": "B"}]},
-                    _usage(100, 50),
+                    {"key": "governance", "title": "AI Governance Radar", "items": []},
+                    types.SimpleNamespace(input_tokens=10, output_tokens=5),
                 ),
                 (
                     {"key": "product", "title": "AI Product Radar", "items": []},
-                    _usage(120, 40),
+                    types.SimpleNamespace(input_tokens=10, output_tokens=5),
                 ),
                 (
                     {"key": "infrastructure", "title": "AI Infrastructure Radar", "items": []},
-                    _usage(80, 30),
+                    types.SimpleNamespace(input_tokens=10, output_tokens=5),
                 ),
             ],
-        ), patch.object(
-            summary_ai,
-            "_translate_categories_to_zh",
-            return_value=(
-                [
-                    {"key": "governance", "title": "AI Governance Radar", "items": [{"title": "A", "description": "B", "title_zh": "甲", "description_zh": "乙"}]},
-                    {"key": "product", "title": "AI Product Radar", "items": []},
-                    {"key": "infrastructure", "title": "AI Infrastructure Radar", "items": []},
-                ],
-                _usage(20, 10),
-            ),
         ):
             payload, usage = summary_ai._call_ai_radar(datetime(2026, 5, 20, tzinfo=timezone.utc))
 
         assert [category["key"] for category in payload["categories"]] == ["governance", "product", "infrastructure"]
-        assert usage.input_tokens == 320
-        assert usage.output_tokens == 130
+        assert usage.input_tokens == 30
+        assert usage.output_tokens == 15
 
     def test_translate_categories_to_zh_merges_fields(self):
         summary_ai.deepseek = MagicMock()
-        summary_ai.deepseek.messages.create.return_value = _make_deepseek_response(
+        summary_ai.deepseek.messages.create.return_value = _make_claude_response(
             '[{"idx":0,"title_zh":"标题","description_zh":"描述"}]'
         )
 
@@ -201,7 +182,7 @@ class TestCallAiRadar:
                 {
                     "key": "governance",
                     "title": "AI Governance Radar",
-                    "items": [{"title": "Title", "description": "Desc"}],
+                    "items": [{"title": "Title", "description": "Desc", "sources": []}],
                 }
             ]
         )

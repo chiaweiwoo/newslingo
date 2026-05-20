@@ -5,136 +5,201 @@ Unit tests for summary_top_stories.py.
 import json
 import os
 import sys
-import types
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, call, patch
 
 sys.modules.setdefault("supabase", MagicMock())
 os.environ.setdefault("SUPABASE_URL", "https://fake.supabase.co")
 os.environ.setdefault("SUPABASE_SERVICE_KEY", "fake-key")
+os.environ.setdefault("ANTHROPIC_API_KEY", "fake-anthropic-key")
 os.environ.setdefault("DEEPSEEK_API_KEY", "fake-deepseek-key")
 os.environ.setdefault("GEMINI_API_KEY", "fake-gemini-key")
 
 with patch("supabase.create_client", return_value=MagicMock()):
     with patch("anthropic.Anthropic", return_value=MagicMock()):
-        with patch("google.genai.Client", return_value=MagicMock()):
-            import summary_top_stories
+        import summary_top_stories
 
 
-def _usage(input_tokens: int, output_tokens: int):
-    return types.SimpleNamespace(input_tokens=input_tokens, output_tokens=output_tokens)
+def _make_llm_response(text: str, in_tok: int = 100, out_tok: int = 200):
+    msg = MagicMock()
+    block = MagicMock()
+    block.type = "text"
+    block.text = text
+    msg.content = [block]
+    msg.usage.input_tokens = in_tok
+    msg.usage.output_tokens = out_tok
+    return msg
 
 
 class TestConstants:
     def test_lookback_days_is_7(self):
         assert summary_top_stories.LOOKBACK_DAYS == 7
 
-    def test_models_routed_to_gemini_and_deepseek(self):
-        assert summary_top_stories.SUMMARY_DISCOVERY_MODEL == "gemini-3.5-flash"
-        assert summary_top_stories.SUMMARY_MODEL == "gemini-3.5-flash"
+    def test_models_use_claude_and_deepseek(self):
+        assert summary_top_stories.SUMMARY_MODEL == "claude-sonnet-4-6"
+        assert summary_top_stories.SUMMARY_FACTCHECK_MODEL == "claude-sonnet-4-6"
         assert summary_top_stories.SUMMARY_TRANSLATION_MODEL == "deepseek-v4-flash"
+        assert summary_top_stories.MIN_NEW_HEADLINES == 30
 
 
 class TestPromptContracts:
-    def test_translation_prompt_mentions_required_fields(self):
+    def test_summary_prompt_requires_topics_json(self):
+        prompt = summary_top_stories.SUMMARY_SYSTEM_PROMPT
+        assert '"topics"' in prompt
+        assert "8 to 10" in prompt
+        assert "Return ONLY the JSON object" in prompt
+
+    def test_factcheck_prompt_requires_topics_json(self):
+        prompt = summary_top_stories.FACT_CHECK_SYSTEM_PROMPT
+        assert '"topics"' in prompt
+        assert "Return ONLY the JSON object" in prompt
+
+    def test_translation_prompt_requires_json_array(self):
         prompt = summary_top_stories.CHINESE_TRANSLATION_SYSTEM_PROMPT
-        assert "Simplified Chinese" in prompt
         assert '"title_zh"' in prompt
         assert '"summary_zh"' in prompt
         assert "Return ONLY the JSON array" in prompt
 
-    def test_discovery_prompt_requires_json_only(self):
-        prompt = summary_top_stories.DISCOVERY_SYSTEM_PROMPT
-        assert '"items"' in prompt
-        assert "Return ONLY the JSON object" in prompt
-        assert "last 7 days" in prompt
-        assert "Do not include citations, URLs, source lists, or extra keys." in prompt
-        assert "Do not over-prune at this stage." in prompt
 
-    def test_selection_prompt_requires_topics_schema(self):
-        prompt = summary_top_stories.SELECTION_SYSTEM_PROMPT
-        assert '"topics"' in prompt
-        assert "8 to 12 total topics" in prompt
-        assert "Return ONLY the JSON object" in prompt
-        assert "Do not include citations, URLs, source lists, or extra keys." in prompt
-
-    def test_response_schemas_match_expected_shapes(self):
-        assert summary_top_stories.DISCOVERY_RESPONSE_SCHEMA["required"] == ["items"]
-        assert summary_top_stories.SELECTION_RESPONSE_SCHEMA["required"] == ["topics"]
-
-class TestCallSummary:
-    def test_call_summary_runs_three_discoveries_then_selects_and_translates(self):
-        with patch.object(
-            summary_top_stories,
-            "_call_gemini_json",
-            side_effect=[
-                (json.dumps({"items": [{"title": "A", "summary": "A sum", "region": "International", "theme": "Politics"}]}), _usage(10, 5)),
-                (json.dumps({"items": [{"title": "B", "summary": "B sum", "region": "Singapore", "theme": "Society"}]}), _usage(12, 6)),
-                (json.dumps({"items": [{"title": "C", "summary": "C sum", "region": "Malaysia", "theme": "Economy"}]}), _usage(14, 7)),
-                (json.dumps({"topics": [{"title": "A", "summary": "A sum", "region": "International", "theme": "Politics"}]}), _usage(20, 8)),
-            ],
-        ) as call_gemini, patch.object(
-            summary_top_stories,
-            "_translate_to_zh",
-            return_value=(
-                {
-                    "topics": [
-                        {
-                            "title": "A",
-                            "summary": "A sum",
-                            "region": "International",
-                            "theme": "Politics",
-                            "title_zh": "甲",
-                            "summary_zh": "乙",
-                        }
-                    ]
-                },
-                _usage(9, 4),
-            ),
-        ) as translate:
-            payload, usage = summary_top_stories._call_summary(datetime(2026, 5, 20, tzinfo=timezone.utc))
-
-        assert call_gemini.call_count == 4
-        translate.assert_called_once()
-        assert payload["topics"][0]["title_zh"] == "甲"
-        assert usage.input_tokens == 65
-        assert usage.output_tokens == 30
-
-    def test_extract_json_object_recovers_from_prose(self):
+class TestHelpers:
+    def test_extract_json_object_from_prose(self):
         text = 'Here:\n{"topics": [{"title": "A"}]}\nDone.'
         assert summary_top_stories._extract_json_object(text) == '{"topics": [{"title": "A"}]}'
 
-    def test_call_summary_emits_count_logs(self):
-        with patch.object(
-            summary_top_stories,
-            "_call_gemini_json",
-            side_effect=[
-                (json.dumps({"items": [{"title": "A", "summary": "A sum", "region": "International", "theme": "Politics"}]}), _usage(10, 5)),
-                (json.dumps({"items": [{"title": "B", "summary": "B sum", "region": "Singapore", "theme": "Society"}]}), _usage(12, 6)),
-                (json.dumps({"items": [{"title": "C", "summary": "C sum", "region": "Malaysia", "theme": "Economy"}]}), _usage(14, 7)),
-                (json.dumps({"topics": [{"title": "A", "summary": "A sum", "region": "International", "theme": "Politics"}]}), _usage(20, 8)),
-            ],
-        ), patch.object(
-            summary_top_stories,
-            "_translate_to_zh",
-            return_value=({"topics": [{"title": "A", "summary": "A sum", "region": "International", "theme": "Politics"}]}, _usage(9, 4)),
-        ), patch("builtins.print") as mock_print:
-            summary_top_stories._call_summary(datetime(2026, 5, 20, tzinfo=timezone.utc))
-
-        printed = "\n".join(str(call.args[0]) for call in mock_print.call_args_list if call.args)
-        assert "[summary] International candidates: parsed=1 normalized=1" in printed
-        assert "[summary] selection input candidates: 3" in printed
-        assert "[summary] selected topics: 1" in printed
-        assert "[summary] translated topics: 1" in printed
-
-    def test_parse_items_accepts_top_level_array(self):
-        items = summary_top_stories._parse_items('[{"title": "A", "summary": "B"}]', "discover")
-        assert items == [{"title": "A", "summary": "B"}]
+    def test_extract_json_array_from_prose(self):
+        text = 'Here:\n[{"idx": 0}]\nDone.'
+        assert summary_top_stories._extract_json_array(text) == '[{"idx": 0}]'
 
     def test_sanitize_topic_rejects_invalid_region(self):
         assert summary_top_stories._sanitize_topic(
             {"title": "A", "summary": "B", "region": "Bad", "theme": "Politics"}
         ) is None
+
+    def test_build_content_groups_regions(self):
+        content = summary_top_stories._build_content(
+            [
+                {"title_en": "One", "title_zh": "一", "category": "International"},
+                {"title_en": "Two", "title_zh": "二", "category": "Singapore"},
+            ]
+        )
+        assert "[INTERNATIONAL]" in content
+        assert "[SINGAPORE]" in content
+
+
+class TestCallSummary:
+    def test_call_summary_runs_generate_factcheck_translate(self):
+        summary_top_stories.claude = MagicMock()
+        summary_top_stories.deepseek = MagicMock()
+        summary_top_stories.claude.messages.create.side_effect = [
+            _make_llm_response(
+                json.dumps(
+                    {
+                        "topics": [
+                            {
+                                "title": "A",
+                                "summary": "A sum",
+                                "region": "International",
+                                "theme": "Politics",
+                            }
+                        ]
+                    }
+                ),
+                in_tok=10,
+                out_tok=5,
+            ),
+            _make_llm_response(
+                json.dumps(
+                    {
+                        "topics": [
+                            {
+                                "title": "A",
+                                "summary": "A sum",
+                                "region": "International",
+                                "theme": "Politics",
+                            }
+                        ]
+                    }
+                ),
+                in_tok=12,
+                out_tok=6,
+            ),
+        ]
+        summary_top_stories.deepseek.messages.create.return_value = _make_llm_response(
+            '[{"idx":0,"title_zh":"甲","summary_zh":"乙"}]',
+            in_tok=9,
+            out_tok=4,
+        )
+
+        payload, usage = summary_top_stories._call_summary("HEADLINES: x")
+
+        assert summary_top_stories.claude.messages.create.call_count == 2
+        assert summary_top_stories.deepseek.messages.create.call_count == 1
+        assert payload["topics"][0]["title_zh"] == "甲"
+        assert usage.input_tokens == 31
+        assert usage.output_tokens == 15
+
+    def test_call_summary_emits_count_logs(self):
+        summary_top_stories.claude = MagicMock()
+        summary_top_stories.deepseek = MagicMock()
+        summary_top_stories.claude.messages.create.side_effect = [
+            _make_llm_response(
+                json.dumps(
+                    {
+                        "topics": [
+                            {
+                                "title": "A",
+                                "summary": "A sum",
+                                "region": "International",
+                                "theme": "Politics",
+                            }
+                        ]
+                    }
+                )
+            ),
+            _make_llm_response(
+                json.dumps(
+                    {
+                        "topics": [
+                            {
+                                "title": "A",
+                                "summary": "A sum",
+                                "region": "International",
+                                "theme": "Politics",
+                            }
+                        ]
+                    }
+                )
+            ),
+        ]
+        summary_top_stories.deepseek.messages.create.return_value = _make_llm_response(
+            '[{"idx":0,"title_zh":"甲","summary_zh":"乙"}]'
+        )
+
+        with patch("builtins.print") as mock_print:
+            summary_top_stories._call_summary("HEADLINES: x")
+
+        printed = "\n".join(str(call.args[0]) for call in mock_print.call_args_list if call.args)
+        assert "[summary] pass-1: 1 topics generated" in printed
+        assert "[summary] pass-2: 1 topics retained" in printed
+        assert "[summary] pass-3: 1 topics translated to Chinese" in printed
+
+    def test_pass1_and_pass2_share_cached_headlines_block(self):
+        summary_top_stories.claude = MagicMock()
+        summary_top_stories.deepseek = MagicMock()
+        summary_top_stories.claude.messages.create.side_effect = [
+            _make_llm_response('{"topics": []}'),
+            _make_llm_response('{"topics": []}'),
+        ]
+        summary_top_stories.deepseek.messages.create.return_value = _make_llm_response("[]")
+
+        summary_top_stories._call_summary("HEADLINES: some content")
+        calls = summary_top_stories.claude.messages.create.call_args_list
+        first_system = calls[0].kwargs["system"]
+        second_system = calls[1].kwargs["system"]
+        assert isinstance(first_system, list)
+        assert isinstance(second_system, list)
+        assert first_system[0]["text"] == second_system[0]["text"]
+        assert first_system[0]["cache_control"] == {"type": "ephemeral"}
 
 
 class TestRotation:

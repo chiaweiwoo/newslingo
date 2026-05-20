@@ -17,9 +17,9 @@ NewsLingo aggregates bilingual Chinese + English news from two sources:
 Current provider split:
 - `deepseek-v4-flash` - headline translation and EN->ZH summary translation
 - `deepseek-v4-pro` - translation assessment and rule distillation
-- `gemini-3.5-flash` - Top Stories discovery and final selection
-- `gemini-2.5-flash-lite` - AI summary grounded discovery primary
-- `gemini-3.5-flash` - AI summary grounded discovery fallback
+- `claude-sonnet-4-6` - Top Stories generation and fact-check
+- `claude-haiku-4-5` - AI summary web search and summarisation
+- `gemini-*` - kept configured for future experiments; not used by the current summary runtime path
 
 Storage is in Supabase. LLM observability is handled by Langfuse Cloud.
 
@@ -108,12 +108,12 @@ Current code uses:
 
 Do not assume raw `json.loads(response_text)` is sufficient for provider responses.
 
-### 8. Job Observability: Never fail silently
+### 7. Job observability: never fail silently
 
 All job scripts (`feed_ingest.py`, `summary_ai.py`, `summary_top_stories.py`) MUST exit with a non-zero status (typically `sys.exit(1)`) if a fatal error occurs.
 - **Never** catch an exception and exit with 0.
 - **Never** assume that printing an error is sufficient for GitHub Actions.
-- Ensure the Action fails (Red) so it is visible in the GitHub UI.
+- Ensure the Action fails so it is visible in the GitHub UI.
 
 ---
 
@@ -155,47 +155,41 @@ Key constants:
 - `ASSESS_MODEL = "deepseek-v4-pro"`
 - `DISTILL_MODEL = "deepseek-v4-pro"`
 
-### Summary - Top Stories (`summary_top_stories.yml`)
+### Summary - Top Stories (`summary_top_stories.py`)
 
-- Runs `summary_top_stories.py`
-- Writes `weekly_summary`
-- Kept separate so Top Stories can be rerun and debugged independently
-
-### Summary - AI (`summary_ai.yml`)
-
-- Runs `summary_ai.py`
-- Writes `ai_radar`
-- Kept separate so AI summary can be rerun and debugged independently
-
-### Top Stories engine (`summary_top_stories.py`)
-
-- uses `gemini-3.5-flash` for 3 grounded discovery calls:
-  - `International`
-  - `Singapore`
-  - `Malaysia`
-- uses `gemini-3.5-flash` for final topic selection
-- uses `deepseek-v4-flash` for EN->ZH translation
+- loads recent headlines from Supabase
+- skips when fewer than `MIN_NEW_HEADLINES = 30` new translated headlines arrived
+- pass 1 uses `claude-sonnet-4-6` to generate `8-10` must-know topics
+- pass 2 uses `claude-sonnet-4-6` to fact-check and tense-correct against the same headline block
+- pass 3 uses `deepseek-v4-flash` for EN->ZH translation
 - rotates `weekly_summary`
 
 Important behavior:
+- use the same cached headline block in pass 1 and pass 2
 - frontend payload shape must stay unchanged
-- no dependency on `headlines` prompt-caching design anymore
-- return fewer topics rather than padding weak ones
+- keep count logs for loaded headlines and pass outputs
 
-### AI engine (`summary_ai.py`)
+### Summary - AI (`summary_ai.py`)
 
-- uses `gemini-2.5-flash-lite` for grounded discovery in:
+- calls Claude web search once per category:
   - `governance`
   - `product`
   - `infrastructure`
-- retries a failed category once on `gemini-3.5-flash`
-- uses `deepseek-v4-flash` for EN->ZH translation
+- primary model: `claude-haiku-4-5`
+- fallback model: `claude-sonnet-4-6` only when Haiku is unavailable
+- pass 2 uses `deepseek-v4-flash` for EN->ZH translation
 - rotates `ai_radar`
 
 Important behavior:
 - output must keep the `categories -> items[]` shape
 - items include `title`, `description`, `title_zh`, `description_zh`
-- source links may exist in payload even if the UI chooses not to show them
+- items may include `sources` internally even if the UI does not show them
+- keep per-category count logs and total final item count
+
+### Gemini status
+
+- `GEMINI_API_KEY` remains in config and workflows for future experiments
+- current runtime summary jobs should not require Gemini to succeed
 
 ---
 
@@ -240,10 +234,8 @@ Current named observations:
 - `assess:astro`
 - `distill:zaobao`
 - `distill:astro`
-- `summary:discover-international`
-- `summary:discover-singapore`
-- `summary:discover-malaysia`
-- `summary:select`
+- `summary:generate`
+- `summary:factcheck`
 - `summary:translate-zh`
 - `ai-radar:generate`
 
@@ -256,7 +248,8 @@ Always flush Langfuse before process exit.
 - **All Zaobao rows same category** -> sitemap regex lost one of `singapore|world|sea`
 - **Zaobao sea rows left with `category=None`** -> sea path lost `classify=True`
 - **IndexError during batch merge** -> someone iterated model results directly
-- **Gemini summary job fails immediately** -> check `GEMINI_API_KEY` and model name
+- **Top Stories fails immediately** -> check `ANTHROPIC_API_KEY`, `DEEPSEEK_API_KEY`, and Supabase headline availability
+- **AI summary fails immediately** -> check `ANTHROPIC_API_KEY`, `DEEPSEEK_API_KEY`, and Anthropic web search tool behavior
 - **DeepSeek call fails immediately** -> check `DEEPSEEK_API_KEY` and Anthropic-compatible endpoint
 - **Scheduled workflow runs stale code** -> dispatch happened before push reached `main`
 
@@ -271,7 +264,7 @@ uv run ruff check .
 
 Key tests:
 - `tests/test_invariants.py`
-- `tests/test_feed_ingest.py` (legacy filename, still covers shared LLM-call helpers)
+- `tests/test_feed_ingest.py`
 - `tests/test_summary_top_stories.py`
 - `tests/test_summary_ai.py`
 - scraper tests

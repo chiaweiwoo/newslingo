@@ -1,6 +1,6 @@
 # NewsLingo
 
-> Chinese & English bilingual news
+> Chinese & English bilingual news  
 > **Live: [newslingo.chiawei.me](https://newslingo.chiawei.me/)**
 
 Read Chinese news alongside English translations and follow current events while picking up natural English phrasing. Headlines from **Zaobao** and **Astro Ben Di Quan** are scraped every 3 hours, translated by DeepSeek, and organised into International / Singapore / Malaysia tabs.
@@ -45,7 +45,7 @@ The translation pipeline self-improves: a quality-assessment step scores each ba
 | Frontend | React + TypeScript, Chakra UI, Vite - deployed on Vercel |
 | Translation scoring | Transformers.js (`all-MiniLM-L6-v2`) - in-browser semantic similarity for quiz |
 | Backend | Python + `uv` |
-| AI | DeepSeek V4 Flash (headline + summary translation) · DeepSeek V4 Pro (assessment + rule distillation) · Gemini 3.5 Flash (Top Stories + AI discovery and selection) |
+| AI | DeepSeek V4 Flash (headline + summary translation) · DeepSeek V4 Pro (assessment + rule distillation) · Claude Sonnet 4.6 (Top Stories generation + fact-check) · Claude Haiku 4.5 (AI Radar search + summarisation) |
 | Database | Supabase (Postgres) |
 | Observability | Langfuse Cloud - token counts, cost, latency, translation quality scores |
 | Jobs | GitHub Actions - Feed every 3h, Top Stories daily at 09:00 SGT, AI summary daily at 09:30 SGT |
@@ -71,13 +71,14 @@ flowchart LR
     DB[("Supabase")]
 
     subgraph summary["summary_top_stories.py · daily 09:00 SGT"]
-        P1["Discover + select\nGemini"]
-        P2["EN->ZH\nDeepSeek Flash"]
-        P1 --> P2
+        P1["Generate\nClaude Sonnet"]
+        P2["Fact-check\nClaude Sonnet"]
+        P3["EN->ZH\nDeepSeek Flash"]
+        P1 --> P2 --> P3
     end
 
     subgraph radar["summary_ai.py · daily 09:30 SGT"]
-        R1["Search + summarise\nGemini"]
+        R1["Search + summarise\nClaude Haiku"]
         R2["Translate to ZH\nDeepSeek Flash"]
         R1 --> R2
     end
@@ -87,16 +88,16 @@ flowchart LR
     ZB & YT --> TR
     DR --> DB
     AS --> DB
-    P2 --> DB
+    P3 --> DB
     R2 --> DB
     DB --> FE
 ```
 
 **Aggregation (`feed_ingest.py`):** scrapes Zaobao sitemaps and the Astro YouTube uploads playlist, translates headlines with DeepSeek Flash, scores each translation 1-5 with DeepSeek Pro, then distils failures into rules that improve the next run.
 
-**Top Stories (`summary_top_stories.py`):** Gemini 3.5 Flash discovers important stories from the open web across International, Singapore, and Malaysia, Gemini 3.5 Flash selects the final set, and DeepSeek Flash translates the final topics into Simplified Chinese.
+**Top Stories (`summary_top_stories.py`):** loads the last 7 days of feed headlines from Supabase, uses Claude Sonnet 4.6 to generate `8-10` must-know topics, runs a second Claude Sonnet 4.6 fact-check pass against the same headline block, and then uses DeepSeek Flash for Simplified Chinese translation.
 
-**AI Radar (`summary_ai.py`):** daily AI-specific search-and-summarise job across governance, product, and infrastructure. Gemini 2.5 Flash-Lite handles grounded discovery first, Gemini 3.5 Flash is the reliability fallback, and DeepSeek Flash adds Simplified Chinese fields for the shared drawer.
+**AI Radar (`summary_ai.py`):** daily AI-specific search-and-summarise job across governance, product, and infrastructure. Claude Haiku 4.5 performs web-grounded discovery and summarisation, Claude Sonnet 4.6 is the fallback when Haiku is unavailable, and DeepSeek Flash adds Simplified Chinese fields for the shared drawer.
 
 ---
 
@@ -104,8 +105,9 @@ flowchart LR
 
 | API | Purpose |
 |---|---|
-| [Google Gemini API](https://ai.google.dev/) | Top Stories discovery/selection and AI Radar discovery/selection |
+| [Anthropic API](https://www.anthropic.com/api) | Top Stories generation + fact-check, AI Radar web search + summarisation |
 | [DeepSeek API](https://platform.deepseek.com/) | Headline translation, assessment, distillation, and Chinese translation passes |
+| [Google Gemini API](https://ai.google.dev/) | Kept configured for future experiments; not required by the current summary runtime path |
 | [YouTube Data API v3](https://developers.google.com/youtube/v3) | Fetch Astro Ben Di Quan uploads |
 | [Supabase](https://supabase.com) | Database + REST API |
 | [Langfuse](https://langfuse.com) | LLM observability - cost, latency, translation quality scores |
@@ -120,7 +122,7 @@ flowchart LR
 
 **Prerequisites:** Python 3.12+, Node 18+, `uv` ([install](https://docs.astral.sh/uv/))
 
-Copy `.env.example` -> `.env` and `frontend/.env.example` -> `frontend/.env` and fill in your Supabase, Gemini, DeepSeek, YouTube, and Langfuse keys.
+Copy `.env.example` -> `.env` and `frontend/.env.example` -> `frontend/.env` and fill in your Supabase, Anthropic, DeepSeek, Gemini, YouTube, and Langfuse keys.
 
 ```bash
 # Backend
@@ -136,7 +138,7 @@ npm install
 npm run dev
 ```
 
-Tests cover: URL->category mapping, scraper output schema, JSON parsing, architectural invariants, Top Stories search-and-translate flow, AI Radar parsing/rotation/translation behavior, and translation assessment logic.
+Tests cover: URL->category mapping, scraper output schema, JSON parsing, architectural invariants, Top Stories three-pass summary flow, AI Radar parsing/rotation/translation behavior, and translation assessment logic.
 
 ## Workflow map
 

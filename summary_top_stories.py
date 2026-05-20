@@ -1,9 +1,9 @@
 """
 NewsLingo Top Stories summary job - runs daily at 09:00 SGT.
 
-This version uses Google Gemini with Google Search grounding to discover and
-rank important general news across International, Singapore, and Malaysia, then
-uses DeepSeek to translate the final payload into Simplified Chinese.
+This version restores the headline-driven summary pipeline: it reads recent
+translated headlines from Supabase, uses Claude Sonnet for generation and
+fact-checking, then uses DeepSeek Flash for Simplified Chinese translation.
 """
 
 import json
@@ -14,8 +14,6 @@ from datetime import datetime, timedelta, timezone
 
 import anthropic
 from dotenv import load_dotenv
-from google import genai
-from google.genai import types as genai_types
 from langfuse import get_client as _langfuse_client
 from langfuse import observe
 
@@ -27,209 +25,114 @@ load_dotenv(override=True)
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")  # kept for future experiments
 os.environ.setdefault("LANGFUSE_HOST", os.getenv("LANGFUSE_BASE_URL", "https://cloud.langfuse.com"))
 
+if not ANTHROPIC_API_KEY:
+    raise RuntimeError("ANTHROPIC_API_KEY is required for summary_top_stories.py")
 if not DEEPSEEK_API_KEY:
     raise RuntimeError("DEEPSEEK_API_KEY is required for summary_top_stories.py")
-if not GEMINI_API_KEY:
-    raise RuntimeError("GEMINI_API_KEY is required for summary_top_stories.py")
 
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-gemini = genai.Client(api_key=GEMINI_API_KEY)
+claude = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=120.0)
 deepseek = anthropic.Anthropic(
     api_key=DEEPSEEK_API_KEY,
     base_url="https://api.deepseek.com/anthropic",
     timeout=120.0,
 )
 
-SUMMARY_DISCOVERY_MODEL = "gemini-3.5-flash"
-SUMMARY_MODEL = "gemini-3.5-flash"
+SUMMARY_MODEL = "claude-sonnet-4-6"
+SUMMARY_FACTCHECK_MODEL = "claude-sonnet-4-6"
 SUMMARY_TRANSLATION_MODEL = "deepseek-v4-flash"
 LOOKBACK_DAYS = 7
 MIN_NEW_HEADLINES = 30
-SUMMARY_DISCOVERY_MAX_TOKENS = 1800
-SUMMARY_SELECTION_MAX_TOKENS = 1800
+SUMMARY_MAX_TOKENS = 6000
 SUMMARY_TRANSLATION_MAX_TOKENS = 2200
-SUMMARY_REPAIR_MODEL = "deepseek-v4-flash"
-SUMMARY_REPAIR_SYSTEM_PROMPT = (
-    "You are a JSON repair specialist. You will receive a malformed or truncated JSON response from another AI model.\n"
-    "Your goal is to fix the JSON structure so it can be parsed, preserving as much content as possible.\n\n"
-    "Rules:\n"
-    "- If the JSON is truncated, close any open strings, arrays, or objects.\n"
-    "- If the JSON is malformed (e.g. missing brackets), correct the syntax.\n"
-    "- Return ONLY the valid JSON object. No preamble, no explanation, no markdown fences.\n"
-    "- If the content is unsalvageable, return an empty items/topics list as appropriate."
-)
 THINKING_DISABLED = {"type": "disabled"}
 
-
-def _repair_json_with_deepseek(body: str) -> str | None:
-    """Fallback: use DeepSeek to fix malformed or truncated JSON."""
-    try:
-        msg = deepseek.messages.create(
-            model=SUMMARY_REPAIR_MODEL,
-            max_tokens=1500,
-            system=SUMMARY_REPAIR_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": body}],
-            thinking=THINKING_DISABLED,
-        )
-
-        raw = ""
-        for block in getattr(msg, "content", []) or []:
-            if getattr(block, "type", None) == "text":
-                raw += getattr(block, "text", "")
-
-        # Use extraction on DeepSeek's output too
-        first = raw.find("{")
-        last = raw.rfind("}")
-        if first != -1 and last != -1 and last > first:
-            return raw[first : last + 1]
-        return raw if raw.strip() else None
-    except Exception as e:
-        print(f"  [summary] DeepSeek repair failed: {e}", flush=True)
-        return None
-
-
 THEMES = ["Politics", "Economy", "Society", "Security", "Technology", "Environment"]
-VALID_REGIONS = {"International", "Singapore", "Malaysia"}
+VALID_REGIONS = {"International", "Malaysia", "Singapore"}
 VALID_THEMES = set(THEMES)
 
-DISCOVERY_TOOL = genai_types.Tool(google_search=genai_types.GoogleSearch())
-DISCOVERY_RESPONSE_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "items": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "title": {"type": "string"},
-                    "summary": {"type": "string"},
-                    "region": {"type": "string"},
-                    "theme": {"type": "string"},
-                },
-                "required": ["title", "summary", "region", "theme"],
-            },
-        }
-    },
-    "required": ["items"],
-}
-SELECTION_RESPONSE_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "topics": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "title": {"type": "string"},
-                    "summary": {"type": "string"},
-                    "region": {"type": "string"},
-                    "theme": {"type": "string"},
-                },
-                "required": ["title", "summary", "region", "theme"],
-            },
-        }
-    },
-    "required": ["topics"],
-}
-
-REGION_DISCOVERY_SPECS = [
-    {
-        "region": "International",
-        "count_guidance": "Find around 12 to 18 strong candidate stories.",
-        "focus": (
-            "Gather broadly across wars, elections, major policy shifts, trade disputes, "
-            "financial shocks, public health alerts, large disasters, sanctions, and major technology moves."
-        ),
-    },
-    {
-        "region": "Singapore",
-        "count_guidance": "Find around 8 to 12 strong candidate stories.",
-        "focus": (
-            "Prefer policy, elections, cost of living, housing, transport, courts, public safety, "
-            "health, and major business or labour developments."
-        ),
-    },
-    {
-        "region": "Malaysia",
-        "count_guidance": "Find around 8 to 12 strong candidate stories.",
-        "focus": (
-            "Prefer policy, parliament, courts, cost of living, public safety, health, trade, "
-            "major infrastructure, and important corporate or state-level developments."
-        ),
-    },
-]
-
-DISCOVERY_SYSTEM_PROMPT = (
-    "You are a senior news editor building a candidate list for a daily Top Stories briefing.\n"
-    "Use Google Search grounding to discover a broad but still relevant candidate pool from the last 7 days.\n\n"
-    "OUTPUT FORMAT:\n"
-    "{\n"
-    '  "items": [\n'
-    "    {\n"
-    '      "title": "Short topic label, max 8 words",\n'
-    '      "summary": "One sentence, max 25 words, concrete and factual",\n'
-    '      "region": "International" | "Singapore" | "Malaysia",\n'
-    '      "theme": "Politics" | "Economy" | "Society" | "Security" | "Technology" | "Environment"\n'
-    "    }\n"
-    "  ]\n"
-    "}\n\n"
-    "RULES:\n"
-    "  - Use searched material from this run only.\n"
-    "  - Include only developments from the last 7 days.\n"
-    "  - Prefer concrete impact over commentary, ceremony, entertainment, sports, and trivia.\n"
-    "  - Gather broadly enough to build a rich candidate pool before later selection.\n"
-    "  - Keep titles and summaries in English only.\n"
-    "  - Do not include citations, URLs, source lists, or extra keys.\n"
-    "  - Do not invent facts, figures, or named entities.\n"
-    "  - Do not over-prune at this stage. Exclude only clearly weak, trivial, duplicate, or irrelevant items.\n"
-    "  - Every item must use one valid region and one valid theme.\n\n"
-    "SELF-CHECK BEFORE RETURNING:\n"
-    "  - Confirm the output is valid JSON.\n"
-    "  - Confirm every item falls within the last 7 days.\n"
-    "  - Confirm every item is supported by grounded search results.\n"
-    "  - Confirm titles are short and summaries stay under 25 words.\n\n"
-    "Return ONLY the JSON object. No preamble, no explanation, no markdown fences."
-)
-
-SELECTION_SYSTEM_PROMPT = (
-    "You are a senior news editor curating a Top Stories briefing for busy professionals.\n"
-    "You will receive candidate items that were already discovered from grounded web search.\n"
-    "Your job is to select and refine only the most important stories.\n\n"
-    "SELECTION STANDARD:\n"
-    "  - Prioritize stories with strategic, operational, financial, political, legal, social, or public-health impact.\n"
-    "  - International news must be held to a higher bar because the pool is much larger.\n"
-    "  - Avoid duplicates, minor updates, ceremony, celebrity, sports, isolated low-signal crime, and fluff.\n"
-    "  - Return fewer stories rather than weak filler.\n"
-    "  - Aim for 8 to 12 total topics, but do not force the count.\n"
-    "  - Do not force equal region balance.\n\n"
+SUMMARY_SYSTEM_PROMPT = (
+    "You are a senior news editor curating a weekly briefing for busy professionals.\n"
+    "Your reader has limited time and wants to know what actually matters, not everything, "
+    "just the things they would feel a gap without knowing.\n\n"
+    "You will receive translated headlines from the past 7 days, tagged by region "
+    "(International / Malaysia / Singapore).\n\n"
+    "SELECTION THINKING - internal process, do not emit these fields:\n"
+    "Before committing to any topic, mentally ask:\n"
+    "  - so_what: Why does this matter beyond the headline? Who specifically feels it, "
+    "workers, businesses, governments, consumers, and how does it change their situation?\n"
+    "  - lesson: What pattern, structural shift, or non-obvious dynamic does this story reveal?\n"
+    "Include a topic ONLY if you can answer both with specificity. If either answer is generic, "
+    "the story does not belong regardless of how prominent it seems.\n\n"
+    "SELECTION CRITERIA:\n"
+    "  - Does it change what people pay, their safety, their legal rights, or their future options?\n"
+    "  - Does it represent a structural shift with consequences over months or years?\n"
+    "  - Does it carry a public health signal worth awareness?\n"
+    "  - Do not include ribbon-cuttings, sports, celebrity, or isolated low-signal incidents.\n\n"
     "OUTPUT FORMAT:\n"
     "{\n"
     '  "topics": [\n'
     "    {\n"
     '      "title": "Short topic label (max 8 words)",\n'
-    '      "summary": "WHO did WHAT WHERE, one sentence, max 25 words",\n'
-    '      "region": "International" | "Singapore" | "Malaysia",\n'
+    '      "summary": "WHO did WHAT WHERE, one sentence, concrete names, max 25 words.",\n'
+    '      "region": "International" | "Malaysia" | "Singapore",\n'
     '      "theme": "Politics" | "Economy" | "Society" | "Security" | "Technology" | "Environment"\n'
     "    }\n"
     "  ]\n"
     "}\n\n"
     "FACTUAL DISCIPLINE:\n"
-    "  - Use only the candidate list provided.\n"
-    "  - Do not add new facts beyond the candidate summaries.\n"
-    "  - Do not include citations, URLs, source lists, or extra keys.\n"
-    "  - If a candidate seems weak or ambiguous, exclude it rather than guessing.\n"
-    "  - Keep the tense consistent with the candidate summary.\n\n"
-    "SELF-CHECK BEFORE RETURNING:\n"
-    "  - Confirm the output is valid JSON with a top-level topics array.\n"
-    "  - Confirm every topic uses a valid region and valid theme.\n"
-    "  - Confirm each summary is one sentence and no more than 25 words.\n"
-    "  - Confirm every selected topic is stronger than the omitted ones.\n\n"
+    "  - Only state that an event occurred if a provided headline directly says it did.\n"
+    "  - For high-stakes claims, be conservative.\n"
+    "  - If headlines imply something but do not confirm it, write around the ambiguity.\n\n"
+    "TENSE DISCIPLINE:\n"
+    "  - Match the tense of your source headlines exactly.\n"
+    "  - Planned events must stay in future tense.\n"
+    "  - When in doubt, under-claim rather than over-claim.\n\n"
+    "CONFIDENCE HEDGING:\n"
+    "  - Multiple independent headlines support a claim -> state it directly.\n"
+    "  - Only one headline supports it -> use 'reportedly' or 'according to reports'.\n"
+    "  - Inferred claim without headline support -> omit it.\n\n"
+    "FIELD INSTRUCTIONS:\n"
+    "  - title: noun phrase, max 8 words, no trailing punctuation\n"
+    "  - summary: one sentence, max 25 words\n"
+    "  - region: International | Malaysia | Singapore\n"
+    "  - theme: Politics | Economy | Society | Security | Technology | Environment\n\n"
+    "QUANTITY:\n"
+    "  - Aim for 8 to 10 strong stories.\n"
+    "  - If fewer than 8 pass the bar, return fewer.\n"
+    "  - Do not force region or theme balance.\n\n"
+    "Before returning, verify each topic: every named entity is supported by a provided headline, "
+    "tense matches the source, single-source claims use hedging, and the topic clears the significance bar.\n\n"
     "Write all fields in English.\n"
     "Return ONLY the JSON object. No preamble, no explanation, no markdown fences."
+)
+
+FACT_CHECK_SYSTEM_PROMPT = (
+    "You are a fact-checker for a news summary. You will receive:\n"
+    "  1. HEADLINES - the source headlines used to generate the summary\n"
+    "  2. TOPICS - the generated summary topics\n\n"
+    "Verify every specific factual claim in title and summary against the provided headlines.\n\n"
+    "Rules:\n"
+    "  - Claim directly matched by a headline -> keep unchanged\n"
+    "  - Claim not matched but general theme is supported -> soften to what headlines actually support\n"
+    "  - Topic whose core claim cannot be matched to any headline -> remove the topic entirely\n"
+    "  - Do not add new topics\n"
+    "  - Only update title/region/theme when a factual correction requires it\n\n"
+    "TENSE CHECK:\n"
+    "  - If a topic uses past tense but the headlines use future tense, correct it.\n"
+    "  - Planned events must remain planned.\n\n"
+    "HEDGING CHECK:\n"
+    "  - Multiple headlines support the claim -> direct language is fine\n"
+    "  - Only one headline -> add 'reportedly' or 'according to reports'\n"
+    "  - No headline supports the claim -> remove it\n\n"
+    "Return the complete corrected topic list as {\"topics\": [...]}.\n"
+    "If TOPICS is empty or malformed, return {\"topics\": []}.\n"
+    "Return ONLY the JSON object. No explanation."
 )
 
 CHINESE_TRANSLATION_SYSTEM_PROMPT = (
@@ -242,173 +145,27 @@ CHINESE_TRANSLATION_SYSTEM_PROMPT = (
     '  {"idx": <same integer>, "title_zh": "<Simplified Chinese title>", "summary_zh": "<Simplified Chinese summary>"}\n\n'
     "Rules:\n"
     "  - Use standard Simplified Chinese proper-noun equivalents where they exist.\n"
-    "  - For proper nouns with no established Simplified Chinese equivalent, keep the English term inline.\n"
-    "  - Translate faithfully and do not add context that is not in the English source.\n"
-    "  - Preserve concise journalistic tone.\n"
-    "  - Keep future events in future tense.\n\n"
-    "Self-check: confirm every item in the output has idx, title_zh, and summary_zh. "
-    "If an item's English input is empty, return {\"idx\": N, \"title_zh\": \"\", \"summary_zh\": \"\"}.\n\n"
-    "Return a JSON array [...] containing one object per input item, in order.\n"
+    "  - For proper nouns without an established Chinese equivalent, keep the English term inline.\n"
+    "  - Translate faithfully, preserve concise journalistic tone, and keep future events in future tense.\n\n"
+    "Self-check: confirm every item has idx, title_zh, and summary_zh.\n"
     "Return ONLY the JSON array. No preamble, no explanation, no markdown fences."
 )
 
 
 def _extract_json_object(text: str) -> str | None:
     first = text.find("{")
-    if first == -1:
+    last = text.rfind("}")
+    if first == -1 or last == -1 or last <= first:
         return None
-
-    body = text[first:]
-
-    # Try standard rfind approach first
-    last = body.rfind("}")
-    if last != -1:
-        candidate = body[: last + 1]
-        try:
-            json.loads(candidate)
-            return candidate
-        except json.JSONDecodeError:
-            pass
-
-    # Repair logic for truncated JSON:
-    # We try to find the longest valid prefix by iteratively shortening the string
-    # and attempting to close the braces/brackets.
-    for i in range(len(body), 0, -1):
-        candidate_body = body[:i]
-
-        stack = []
-        in_string = False
-        escaped = False
-        for char in candidate_body:
-            if escaped:
-                escaped = False
-                continue
-            if char == "\\":
-                escaped = True
-                continue
-            if char == '"':
-                in_string = not in_string
-                continue
-            if not in_string:
-                if char == "{":
-                    stack.append("}")
-                elif char == "[":
-                    stack.append("]")
-                elif char == "}":
-                    if stack and stack[-1] == "}":
-                        stack.pop()
-                elif char == "]":
-                    if stack and stack[-1] == "]":
-                        stack.pop()
-
-        repaired = candidate_body
-        if in_string:
-            repaired += '"'
-
-        repaired = repaired.strip()
-        while repaired and repaired[-1] in (",", "[", "{", ":", " "):
-            repaired = repaired[:-1].strip()
-
-        if stack:
-            repaired += "".join(reversed(stack))
-
-        try:
-            json.loads(repaired)
-            return repaired
-        except json.JSONDecodeError:
-            continue
-
-    return None
+    return text[first : last + 1]
 
 
 def _extract_json_array(text: str) -> str | None:
     first = text.find("[")
-    if first == -1:
+    last = text.rfind("]")
+    if first == -1 or last == -1 or last <= first:
         return None
-
-    body = text[first:]
-
-    # Standard rfind
-    last = body.rfind("]")
-    if last != -1:
-        candidate = body[: last + 1]
-        try:
-            json.loads(candidate)
-            return candidate
-        except json.JSONDecodeError:
-            pass
-
-    # Basic repair
-    stack = []
-    in_string = False
-    escaped = False
-    for char in body:
-        if escaped:
-            escaped = False
-            continue
-        if char == "\\":
-            escaped = True
-            continue
-        if char == '"':
-            in_string = not in_string
-            continue
-        if not in_string:
-            if char == "[":
-                stack.append("]")
-            elif char == "{":
-                stack.append("}")
-            elif char == "]":
-                if stack and stack[-1] == "]":
-                    stack.pop()
-            elif char == "}":
-                if stack and stack[-1] == "}":
-                    stack.pop()
-
-    repaired = body
-    if in_string:
-        repaired += '"'
-    else:
-        repaired = repaired.rstrip().rstrip(",")
-
-    if stack:
-        repaired += "".join(reversed(stack))
-
-    try:
-        json.loads(repaired)
-        return repaired
-    except json.JSONDecodeError:
-        return None
-
-
-def _gemini_text(response: object) -> str:
-    text = getattr(response, "text", None)
-    if text:
-        return text
-
-    parts: list[str] = []
-    for candidate in getattr(response, "candidates", []) or []:
-        content = getattr(candidate, "content", None)
-        for part in getattr(content, "parts", []) or []:
-            maybe = getattr(part, "text", None)
-            if maybe:
-                parts.append(maybe)
-    return "\n".join(parts).strip()
-
-
-def _gemini_usage(response: object) -> types.SimpleNamespace:
-    usage = getattr(response, "usage_metadata", None)
-    input_tokens = (
-        getattr(usage, "prompt_token_count", 0)
-        or getattr(usage, "input_token_count", 0)
-        or getattr(usage, "total_token_count", 0)
-        or 0
-    )
-    output_tokens = (
-        getattr(usage, "candidates_token_count", 0)
-        or getattr(usage, "output_token_count", 0)
-        or 0
-    )
-    return types.SimpleNamespace(input_tokens=input_tokens, output_tokens=output_tokens)
+    return text[first : last + 1]
 
 
 def _deepseek_usage(message: object) -> types.SimpleNamespace:
@@ -428,55 +185,6 @@ def _parse_topics(body: str, label: str) -> dict:
                 return parsed
         except json.JSONDecodeError:
             pass
-
-    # Fallback to DeepSeek repair
-    print(f"  [summary] {label}: manual repair failed, attempting DeepSeek repair...", flush=True)
-    repaired = _repair_json_with_deepseek(body)
-    if repaired:
-        try:
-            parsed = json.loads(repaired)
-            if isinstance(parsed, dict) and isinstance(parsed.get("topics"), list):
-                print(f"  [summary] {label}: DeepSeek repair successful", flush=True)
-                return parsed
-        except json.JSONDecodeError:
-            pass
-
-    raise ValueError(f"[summary] {label}: failed to parse JSON. Body (first 400): {body[:400]!r}")
-
-
-def _parse_items(body: str, label: str) -> list[dict]:
-    extracted = _extract_json_object(body)
-    if extracted:
-        try:
-            parsed = json.loads(extracted)
-            items = parsed.get("items")
-            if isinstance(items, list):
-                return items
-        except json.JSONDecodeError:
-            pass
-
-    extracted_array = _extract_json_array(body)
-    if extracted_array:
-        try:
-            parsed = json.loads(extracted_array)
-            if isinstance(parsed, list):
-                return parsed
-        except json.JSONDecodeError:
-            pass
-
-    # Fallback to DeepSeek repair
-    print(f"  [summary] {label}: manual repair failed, attempting DeepSeek repair...", flush=True)
-    repaired = _repair_json_with_deepseek(body)
-    if repaired:
-        try:
-            parsed = json.loads(repaired)
-            items = parsed.get("items")
-            if isinstance(items, list):
-                print(f"  [summary] {label}: DeepSeek repair successful", flush=True)
-                return items
-        except json.JSONDecodeError:
-            pass
-
     raise ValueError(f"[summary] {label}: failed to parse JSON. Body (first 400): {body[:400]!r}")
 
 
@@ -495,164 +203,12 @@ def _sanitize_topic(topic: dict) -> dict | None:
     }
 
 
-def _call_gemini_json(
-    model: str,
-    system_prompt: str,
-    user_prompt: str,
-    *,
-    use_search: bool,
-    max_output_tokens: int,
-    response_schema: dict,
-) -> tuple[str, types.SimpleNamespace]:
-    config_kwargs = {
-        "system_instruction": system_prompt,
-        "max_output_tokens": max_output_tokens,
-        "tools": [DISCOVERY_TOOL] if use_search else None,
-    }
-    if not use_search:
-        config_kwargs["response_mime_type"] = "application/json"
-        config_kwargs["response_schema"] = response_schema
-
-    config = genai_types.GenerateContentConfig(**config_kwargs)
-    response = gemini.models.generate_content(
-        model=model,
-        contents=user_prompt,
-        config=config,
-    )
-    return _gemini_text(response), _gemini_usage(response)
-
-
-def _translate_to_zh(topics: list[dict]) -> tuple[dict, object]:
-    lines: list[str] = []
-    for i, t in enumerate(topics):
-        lines.append(f"IDX: {i}")
-        lines.append(f"TITLE: {t['title']}")
-        lines.append(f"SUMMARY: {t['summary']}")
-        lines.append("")
-
-    slim_input = "\n".join(lines).strip()
-    msg = deepseek.messages.create(
-        model=SUMMARY_TRANSLATION_MODEL,
-        max_tokens=SUMMARY_TRANSLATION_MAX_TOKENS,
-        system=CHINESE_TRANSLATION_SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": slim_input}],
-        thinking=THINKING_DISABLED,
-    )
-
-    raw = ""
-    for block in getattr(msg, "content", []) or []:
+def _assistant_text(message: object) -> str:
+    parts: list[str] = []
+    for block in getattr(message, "content", []) or []:
         if getattr(block, "type", None) == "text":
-            raw += getattr(block, "text", "")
-
-    extracted = _extract_json_array(raw)
-    if not extracted:
-        raise ValueError(f"[summary] pass-zh: failed to parse JSON array. Body (first 400): {raw[:400]!r}")
-
-    translated = json.loads(extracted)
-    for entry in translated:
-        idx = entry.get("idx")
-        if isinstance(idx, int) and 0 <= idx < len(topics):
-            topics[idx]["title_zh"] = entry.get("title_zh", "")
-            topics[idx]["summary_zh"] = entry.get("summary_zh", "")
-
-    return {"topics": topics}, _deepseek_usage(msg)
-
-
-@observe(name="summary:generate", as_type="generation")
-def _call_summary(today_utc: datetime) -> tuple[dict, object]:
-    all_candidates: list[dict] = []
-    total_input = 0
-    total_output = 0
-
-    for spec in REGION_DISCOVERY_SPECS:
-        region = spec["region"]
-        print(f"  [summary] discovering candidates for {region}...", flush=True)
-
-        today_label = today_utc.date().isoformat()
-        user_prompt = (
-            f"Today's UTC date is {today_label}.\n"
-            f"Discover important {region} news from the last {LOOKBACK_DAYS} days.\n"
-            f"{spec['count_guidance']}\n"
-            f"Focus: {spec['focus']}"
-        )
-
-        body, usage = _call_gemini_json(
-            SUMMARY_DISCOVERY_MODEL,
-            DISCOVERY_SYSTEM_PROMPT,
-            user_prompt,
-            use_search=True,
-            max_output_tokens=SUMMARY_DISCOVERY_MAX_TOKENS,
-            response_schema=DISCOVERY_RESPONSE_SCHEMA,
-        )
-        total_input += usage.input_tokens
-        total_output += usage.output_tokens
-
-        parsed_items = _parse_items(body, f"discover-{region.lower()}")
-        normalized_items = []
-        for it in parsed_items:
-            it["region"] = region  # enforce consistency
-            st = _sanitize_topic(it)
-            if st:
-                normalized_items.append(st)
-                all_candidates.append(st)
-        print(
-            f"  [summary] {region} candidates: parsed={len(parsed_items)} normalized={len(normalized_items)}",
-            flush=True,
-        )
-
-    print(f"  [summary] selection input candidates: {len(all_candidates)}", flush=True)
-    candidate_lines = []
-    for i, it in enumerate(all_candidates):
-        candidate_lines.append(f"IDX: {i}")
-        candidate_lines.append(f"REGION: {it.get('region')}")
-        candidate_lines.append(f"TITLE: {it.get('title')}")
-        candidate_lines.append(f"SUMMARY: {it.get('summary')}")
-        candidate_lines.append("")
-
-    selection_user_prompt = "CANDIDATE LIST:\n\n" + "\n".join(candidate_lines).strip()
-    body, usage = _call_gemini_json(
-        SUMMARY_MODEL,
-        SELECTION_SYSTEM_PROMPT,
-        selection_user_prompt,
-        use_search=False,
-        max_output_tokens=SUMMARY_SELECTION_MAX_TOKENS,
-        response_schema=SELECTION_RESPONSE_SCHEMA,
-    )
-    total_input += usage.input_tokens
-    total_output += usage.output_tokens
-
-    topics_payload = _parse_topics(body, "select")
-    raw_topics = topics_payload.get("topics", [])
-    sanitized = []
-    for t in raw_topics:
-        st = _sanitize_topic(t)
-        if st:
-            sanitized.append(st)
-    print(f"  [summary] selected topics: {len(sanitized)}", flush=True)
-
-    print(f"  [summary] translating {len(sanitized)} topics to Chinese...", flush=True)
-    payload, trans_usage = _translate_to_zh(sanitized)
-    print(f"  [summary] translated topics: {len(payload.get('topics', []))}", flush=True)
-    total_input += trans_usage.input_tokens
-    total_output += trans_usage.output_tokens
-
-    _langfuse_client().update_current_generation(
-        model=SUMMARY_MODEL,
-        usage_details={"input": total_input, "output": total_output},
-    )
-
-    combined_usage = types.SimpleNamespace(input_tokens=total_input, output_tokens=total_output)
-    return payload, combined_usage
-
-
-def _get_new_headlines_count(window_start: str) -> int:
-    result = (
-        supabase.table("headlines")
-        .select("id", count="exact")
-        .gte("created_at", window_start)
-        .execute()
-    )
-    return result.count or 0
+            parts.append(getattr(block, "text", ""))
+    return "\n".join(parts).strip()
 
 
 def _load_previous_summary() -> dict | None:
@@ -665,6 +221,138 @@ def _load_previous_summary() -> dict | None:
         .execute()
     )
     return result.data[0] if result.data else None
+
+
+def _load_recent_headlines(since_iso: str) -> list[dict]:
+    result = (
+        supabase.table("headlines")
+        .select("title_zh, title_en, category, published_at")
+        .gte("published_at", since_iso)
+        .not_.is_("title_en", "null")
+        .order("published_at", desc=True)
+        .limit(1000)
+        .execute()
+    )
+    return result.data or []
+
+
+def _count_new_headlines(since_iso: str) -> int:
+    result = (
+        supabase.table("headlines")
+        .select("id", count="exact", head=True)
+        .gte("published_at", since_iso)
+        .not_.is_("title_en", "null")
+        .execute()
+    )
+    return result.count or 0
+
+
+def _build_content(headlines: list[dict]) -> str:
+    by_region: dict[str, list[dict]] = {
+        "International": [],
+        "Malaysia": [],
+        "Singapore": [],
+    }
+    for headline in headlines:
+        category = headline.get("category") or "International"
+        bucket = category if category in by_region else "International"
+        by_region[bucket].append(headline)
+
+    parts: list[str] = [f"HEADLINES FROM THE PAST {LOOKBACK_DAYS} DAYS ({len(headlines)} total):"]
+    for region, items in by_region.items():
+        if not items:
+            continue
+        parts.append(f"\n[{region.upper()}] - {len(items)} headlines")
+        for headline in items[:120]:
+            parts.append(f"  - {headline['title_en']}  ({headline['title_zh']})")
+    return "\n".join(parts)
+
+
+def _translate_to_zh(payload: dict) -> tuple[dict, object]:
+    topics = payload.get("topics", [])
+    if not topics:
+        return payload, types.SimpleNamespace(input_tokens=0, output_tokens=0)
+
+    lines: list[str] = []
+    for idx, topic in enumerate(topics):
+        lines.append(f"IDX: {idx}")
+        lines.append(f"TITLE: {topic['title']}")
+        lines.append(f"SUMMARY: {topic['summary']}")
+        lines.append("")
+    slim_input = "\n".join(lines).strip()
+
+    msg = deepseek.messages.create(
+        model=SUMMARY_TRANSLATION_MODEL,
+        max_tokens=SUMMARY_TRANSLATION_MAX_TOKENS,
+        system=CHINESE_TRANSLATION_SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": slim_input}],
+        thinking=THINKING_DISABLED,
+    )
+
+    raw = _assistant_text(msg)
+    extracted = _extract_json_array(raw)
+    if not extracted:
+        raise ValueError(f"[summary] pass-3: failed to parse JSON array. Body (first 400): {raw[:400]!r}")
+
+    zh_list = json.loads(extracted)
+    for zh in zh_list:
+        idx = zh.get("idx")
+        if isinstance(idx, int) and 0 <= idx < len(topics):
+            topics[idx]["title_zh"] = zh.get("title_zh", "")
+            topics[idx]["summary_zh"] = zh.get("summary_zh", "")
+    return {"topics": topics}, _deepseek_usage(msg)
+
+
+@observe(name="summary:generate", as_type="generation")
+def _call_summary(content: str) -> tuple[dict, object]:
+    headlines_block = {"type": "text", "text": content, "cache_control": {"type": "ephemeral"}}
+
+    msg1 = claude.messages.create(
+        model=SUMMARY_MODEL,
+        max_tokens=SUMMARY_MAX_TOKENS,
+        system=[headlines_block, {"type": "text", "text": SUMMARY_SYSTEM_PROMPT}],
+        messages=[{"role": "user", "content": "Generate the topic clusters from the headlines above."}],
+    )
+    payload = _parse_topics(_assistant_text(msg1), "pass-1")
+    topic_count_before = len(payload.get("topics", []))
+    print(f"[summary] pass-1: {topic_count_before} topics generated", flush=True)
+
+    msg2 = claude.messages.create(
+        model=SUMMARY_FACTCHECK_MODEL,
+        max_tokens=SUMMARY_MAX_TOKENS,
+        system=[headlines_block, {"type": "text", "text": FACT_CHECK_SYSTEM_PROMPT}],
+        messages=[{"role": "user", "content": f"TOPICS:\n{json.dumps(payload, ensure_ascii=False, indent=2)}"}],
+    )
+    corrected = _parse_topics(_assistant_text(msg2), "pass-2")
+    corrected_topics = []
+    for topic in corrected.get("topics", []):
+        clean = _sanitize_topic(topic)
+        if clean:
+            corrected_topics.append(clean)
+    corrected = {"topics": corrected_topics}
+    topic_count_after = len(corrected_topics)
+    print(f"[summary] pass-2: {topic_count_after} topics retained", flush=True)
+
+    translated, translation_usage = _translate_to_zh(corrected)
+    print(f"[summary] pass-3: {len(translated.get('topics', []))} topics translated to Chinese", flush=True)
+
+    combined = types.SimpleNamespace(
+        input_tokens=(
+            (getattr(msg1.usage, "input_tokens", 0) or 0)
+            + (getattr(msg2.usage, "input_tokens", 0) or 0)
+            + translation_usage.input_tokens
+        ),
+        output_tokens=(
+            (getattr(msg1.usage, "output_tokens", 0) or 0)
+            + (getattr(msg2.usage, "output_tokens", 0) or 0)
+            + translation_usage.output_tokens
+        ),
+    )
+    _langfuse_client().update_current_generation(
+        model=SUMMARY_MODEL,
+        usage_details={"input": combined.input_tokens, "output": combined.output_tokens},
+    )
+    return translated, combined
 
 
 def _store_summary(now: datetime, payload: dict, previous: dict | None) -> None:
@@ -681,29 +369,39 @@ def _store_summary(now: datetime, payload: dict, previous: dict | None) -> None:
     ).execute()
 
 
-
-
 def _main() -> None:
     print("[summary] NewsLingo Top Stories job starting", flush=True)
 
     try:
         now = datetime.now(timezone.utc)
-        window_start = (now - timedelta(days=LOOKBACK_DAYS)).isoformat()
+        since_iso = (now - timedelta(days=LOOKBACK_DAYS)).isoformat()
+        previous = _load_previous_summary()
 
-        new_count = _get_new_headlines_count(window_start)
-        if new_count < MIN_NEW_HEADLINES:
-            print(f"[summary] skipping: only {new_count} headlines in last {LOOKBACK_DAYS} days", flush=True)
+        if previous:
+            new_count = _count_new_headlines(previous["created_at"])
+            print(f"[summary] {new_count} new headlines since last summary", flush=True)
+            if new_count < MIN_NEW_HEADLINES:
+                print(f"[summary] fewer than {MIN_NEW_HEADLINES} new headlines - skipping", flush=True)
+                return
+
+        headlines = _load_recent_headlines(since_iso)
+        print(f"[summary] {len(headlines)} headlines in past {LOOKBACK_DAYS} days", flush=True)
+        if not headlines:
+            print("[summary] no headlines found - skipping", flush=True)
             return
 
-        previous = _load_previous_summary()
-        payload, _usage = _call_summary(now)
-        total_topics = len(payload.get("topics", []))
-        print(f"[summary] generated {total_topics} topics from {new_count} headlines", flush=True)
+        content = _build_content(headlines)
+        payload, _usage = _call_summary(content)
+        topic_count = len(payload.get("topics", []))
+        print(f"[summary] final: {topic_count} topic clusters", flush=True)
+        if not topic_count:
+            print("[summary] no topics returned - skipping storage", flush=True)
+            return
 
         _store_summary(now, payload, previous)
         print("[summary] summary updated successfully", flush=True)
-    except Exception as e:
-        print(f"[summary] ERROR: {e}", flush=True)
+    except Exception as exc:
+        print(f"[summary] ERROR: {exc}", flush=True)
         sys.exit(1)
 
 

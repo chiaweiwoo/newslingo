@@ -1,7 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   Box, Flex, Heading, Link, Spinner, Text, VStack, Divider, HStack, Center,
-  useDisclosure, useColorMode,
+  useDisclosure, useColorMode, Image,
   Menu, MenuButton, MenuDivider, MenuGroup, MenuList, MenuItem,
 } from '@chakra-ui/react';
 import { useFontSize } from './contexts/FontSizeContext';
@@ -14,6 +14,7 @@ import SearchBar from './components/SearchBar';
 import StatsDrawer from './components/StatsDrawer';
 import DigestPreviewPage from './components/DigestPreviewDrawer';
 import ThisWeekDrawer from './components/ThisWeekDrawer';
+import newslingoCompassIcon from './assets/newslingo-compass-icon.svg';
 
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
@@ -220,13 +221,21 @@ function MainApp() {
             />
           ) : (
           <Flex align="center" justify="space-between" pt={3} pb={2}>
-            <Heading
-              size="md" color="white" fontWeight="700"
-              letterSpacing="-0.3px"
-              fontFamily="'Noto Serif SC', 'Georgia', serif"
-            >
-              NewsLingo
-            </Heading>
+            <HStack spacing={2.5} align="center">
+              <Image
+                src={newslingoCompassIcon}
+                alt="NewsLingo"
+                boxSize="23px"
+                flexShrink={0}
+              />
+              <Heading
+                size="md" color="white" fontWeight="700"
+                letterSpacing="-0.3px"
+                fontFamily="'Noto Serif SC', 'Georgia', serif"
+              >
+                NewsLingo
+              </Heading>
+            </HStack>
             <HStack spacing={3} align="center">
               {/* Search icon */}
               <Box

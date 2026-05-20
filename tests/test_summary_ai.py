@@ -40,6 +40,7 @@ class TestModelAndPromptConfig:
     def test_models_use_gemini_and_deepseek(self):
         assert summary_ai.AI_RADAR_MODEL == "gemini-2.5-flash-lite"
         assert summary_ai.AI_RADAR_DISCOVERY_MODEL == "gemini-2.5-flash-lite"
+        assert summary_ai.AI_RADAR_FALLBACK_MODEL == "gemini-3.5-flash"
         assert summary_ai.AI_RADAR_TRANSLATION_MODEL == "deepseek-v4-flash"
 
     def test_translation_prompt_contract_present(self):
@@ -109,6 +110,31 @@ class TestCallAiRadar:
         assert kwargs["use_search"] is True
         assert result["key"] == "governance"
         assert usage.input_tokens == 10
+
+    def test_call_category_retries_with_fallback_model(self):
+        with patch.object(
+            summary_ai,
+            "_call_gemini_json",
+            side_effect=[
+                ValueError("bad primary payload"),
+                (
+                    json.dumps({"items": [{"title": "A", "description": "B"}]}),
+                    _usage(11, 6),
+                ),
+            ],
+        ) as call_gemini:
+            result, usage = summary_ai._call_category(
+                summary_ai.CATEGORY_SPECS[1],
+                datetime(2026, 5, 20, tzinfo=timezone.utc),
+            )
+
+        assert [c.args[0] for c in call_gemini.call_args_list] == [
+            "gemini-2.5-flash-lite",
+            "gemini-3.5-flash",
+        ]
+        assert result["key"] == "product"
+        assert usage.input_tokens == 11
+        assert usage.output_tokens == 6
 
     def test_call_ai_radar_combines_category_results(self):
         with patch.object(

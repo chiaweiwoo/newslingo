@@ -18,7 +18,8 @@ Current provider split:
 - `deepseek-v4-flash` - headline translation and EN->ZH summary translation
 - `deepseek-v4-pro` - translation assessment and rule distillation
 - `gemini-3.5-flash` - Top Stories discovery and final selection
-- `gemini-2.5-flash-lite` - AI summary grounded discovery
+- `gemini-2.5-flash-lite` - AI summary grounded discovery primary
+- `gemini-3.5-flash` - AI summary grounded discovery fallback
 
 Storage is in Supabase. LLM observability is handled by Langfuse Cloud.
 
@@ -187,6 +188,7 @@ Important behavior:
   - `governance`
   - `product`
   - `infrastructure`
+- retries a failed category once on `gemini-3.5-flash`
 - uses `deepseek-v4-flash` for EN->ZH translation
 - rotates `ai_radar`
 

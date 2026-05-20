@@ -96,7 +96,7 @@ flowchart LR
 
 **Top Stories (`summary_top_stories.py`):** Gemini 3.5 Flash discovers important stories from the open web across International, Singapore, and Malaysia, Gemini 3.5 Flash selects the final set, and DeepSeek Flash translates the final topics into Simplified Chinese.
 
-**AI Radar (`summary_ai.py`):** daily AI-specific search-and-summarise job across governance, product, and infrastructure. Gemini 2.5 Flash-Lite handles grounded discovery, then DeepSeek Flash adds Simplified Chinese fields for the shared drawer.
+**AI Radar (`summary_ai.py`):** daily AI-specific search-and-summarise job across governance, product, and infrastructure. Gemini 2.5 Flash-Lite handles grounded discovery first, Gemini 3.5 Flash is the reliability fallback, and DeepSeek Flash adds Simplified Chinese fields for the shared drawer.
 
 ---
 

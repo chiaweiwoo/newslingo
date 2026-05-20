@@ -46,6 +46,7 @@ deepseek = anthropic.Anthropic(
 
 AI_RADAR_DISCOVERY_MODEL = "gemini-2.5-flash-lite"
 AI_RADAR_MODEL = "gemini-2.5-flash-lite"
+AI_RADAR_FALLBACK_MODEL = "gemini-3.5-flash"
 AI_RADAR_TRANSLATION_MODEL = "deepseek-v4-flash"
 LOOKBACK_DAYS = 7
 AI_RADAR_MAX_TOKENS = 1500
@@ -441,15 +442,42 @@ def _call_category(category: dict, today_utc: datetime) -> tuple[dict, object]:
         f"Compile {category['title']} for the last {LOOKBACK_DAYS} days.\n"
         f"Focus only on this category: {category['focus']}"
     )
-    body, usage = _call_gemini_json(
-        AI_RADAR_DISCOVERY_MODEL,
-        AI_RADAR_SYSTEM_PROMPT,
-        user_prompt,
-        use_search=True,
-        max_output_tokens=AI_RADAR_MAX_TOKENS,
-        response_schema=AI_RADAR_RESPONSE_SCHEMA,
-    )
-    items = _normalize_items(_parse_items_payload(body))
+    usage = types.SimpleNamespace(input_tokens=0, output_tokens=0)
+    items: list[dict] | None = None
+    last_error: Exception | None = None
+
+    for attempt, model in enumerate((AI_RADAR_DISCOVERY_MODEL, AI_RADAR_FALLBACK_MODEL), start=1):
+        try:
+            body, attempt_usage = _call_gemini_json(
+                model,
+                AI_RADAR_SYSTEM_PROMPT,
+                user_prompt,
+                use_search=True,
+                max_output_tokens=AI_RADAR_MAX_TOKENS,
+                response_schema=AI_RADAR_RESPONSE_SCHEMA,
+            )
+            usage.input_tokens += getattr(attempt_usage, "input_tokens", 0) or 0
+            usage.output_tokens += getattr(attempt_usage, "output_tokens", 0) or 0
+            items = _normalize_items(_parse_items_payload(body))
+            if attempt > 1:
+                print(
+                    f"  [ai-radar] {category['key']} recovered with fallback model {model}",
+                    flush=True,
+                )
+            break
+        except Exception as exc:
+            last_error = exc
+            if attempt == 1:
+                print(
+                    f"  [ai-radar] {category['key']} failed on primary model {model}; retrying with {AI_RADAR_FALLBACK_MODEL}",
+                    flush=True,
+                )
+            else:
+                raise
+
+    if items is None:
+        raise last_error or RuntimeError(f"[ai-radar] {category['key']} failed without a parseable response")
+
     return {
         "key": category["key"],
         "title": category["title"],

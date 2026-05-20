@@ -226,7 +226,7 @@ GitHub Actions (cron: daily 09:30 SGT)
 | Distillation | `Codex-sonnet-4-6` | Rule extraction from failures |
 | Top Stories Pass 1 + 2 | `Codex-sonnet-4-6` | Generate + fact-check — requires reasoning |
 | Top Stories Pass 3 | `Codex-haiku-4-5` | EN→ZH translation — mechanical task, 3× cheaper |
-| AI Radar | `claude-haiku-4-5` | Daily search + summarise; must use direct-call web search |
+| AI Radar | `claude-haiku-4-5` | Daily search + summarise + ZH translation; must use direct-call web search |
 
 **Model invariant for weekly_summary.py:** `SUMMARY_MODEL` must be Sonnet or Opus (never Haiku). `SUMMARY_HAIKU_MODEL` must be Haiku. Do not swap Haiku into Pass 1 or Pass 2.
 
@@ -405,6 +405,6 @@ CI runs two jobs in parallel on every push: `test` (ruff + pytest) and `build-fr
 ## Data Reset Procedure
 
 1. Confirm code is committed and CI is green.
-2. Delete rows from: `headlines`, `assessment_logs`, `prompt_rules`, `learning_digest`, `weekly_summary`.
-3. Trigger `workflow_dispatch` on the main job workflow, then on `weekly_summary.yml`.
+2. Delete rows from: `headlines`, `assessment_logs`, `prompt_rules`, `learning_digest`, `weekly_summary`, `ai_radar`.
+3. Trigger `workflow_dispatch` on the main job workflow, then on `weekly_summary.yml` and `ai_radar.yml`.
 4. Verify: `SELECT category, COUNT(*) FROM headlines GROUP BY category`.

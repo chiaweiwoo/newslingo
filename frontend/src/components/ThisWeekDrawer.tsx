@@ -247,7 +247,7 @@ export default function ThisWeekDrawer({ isOpen, onClose }: Props) {
     if (fallback) setActiveRadarKey(fallback.key);
   }, [activeRadarKey, radarCounts]);
 
-  const headerTitle = section === 'news' ? 'Top Stories' : 'AI Radar';
+  const headerTitle = 'Top Stories';
   const headerSubtitle =
     section === 'news'
       ? 'The most important stories from the past 7 days.'
@@ -312,12 +312,12 @@ export default function ThisWeekDrawer({ isOpen, onClose }: Props) {
           <HStack spacing={2} mt={3}>
             <FilterButton
               active={section === 'news'}
-              label="Top Stories"
+              label="General"
               onClick={() => setSection('news')}
             />
             <FilterButton
               active={section === 'ai'}
-              label="AI Radar"
+              label="AI"
               onClick={() => setSection('ai')}
             />
           </HStack>

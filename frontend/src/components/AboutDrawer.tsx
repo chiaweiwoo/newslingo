@@ -96,7 +96,7 @@ export default function AboutDrawer({ isOpen, onClose }: Props) {
               <VStack spacing={1.5} align="stretch">
                 {[
                   'Headlines are scraped every 3 hours',
-                  'Translated and quality-checked by Claude Sonnet',
+                  'Translated and quality-checked by AI models tuned for each task',
                   'Top Stories and AI Radar refresh daily from the past 7 days',
                   'Organised by region and date',
                 ].map((step) => (

@@ -33,6 +33,7 @@ interface Topic {
 }
 
 interface SummaryRow {
+  created_at: string;
   payload: { topics: Topic[] };
 }
 
@@ -52,6 +53,7 @@ interface RadarCategory {
 }
 
 interface RadarRow {
+  created_at: string;
   payload: { categories: RadarCategory[] };
 }
 
@@ -78,6 +80,20 @@ function getLang(): Lang {
 
 function setLangStorage(l: Lang) {
   try { localStorage.setItem('topStories.lang', l); } catch {}
+}
+
+function formatLastRan(dateStr?: string): string | null {
+  if (!dateStr) return null;
+  const date = new Date(dateStr);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat('en-SG', {
+    day: 'numeric',
+    month: 'short',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: 'Asia/Singapore',
+  }).format(date);
 }
 
 function DrawerCard({
@@ -178,14 +194,14 @@ export default function ThisWeekDrawer({ isOpen, onClose }: Props) {
       const [summaryResult, radarResult] = await Promise.all([
         supabase
           .from('weekly_summary')
-          .select('payload')
+          .select('created_at, payload')
           .eq('active', true)
           .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle(),
         supabase
           .from('ai_radar')
-          .select('payload')
+          .select('created_at, payload')
           .eq('active', true)
           .order('created_at', { ascending: false })
           .limit(1)
@@ -229,6 +245,9 @@ export default function ThisWeekDrawer({ isOpen, onClose }: Props) {
   const hasNews = allTopics.length > 0;
   const hasRadar = categories.some((category) => category.items?.length);
   const hasAnyContent = hasNews || hasRadar;
+  const summaryLastRan = formatLastRan(data?.summary?.created_at);
+  const radarLastRan = formatLastRan(data?.radar?.created_at);
+  const footerLastRan = section === 'news' ? summaryLastRan : radarLastRan;
 
   useEffect(() => {
     if (!hasNews && hasRadar) setSection('ai');
@@ -354,7 +373,7 @@ export default function ThisWeekDrawer({ isOpen, onClose }: Props) {
                 <Text fontSize="2xl">ðŸ“°</Text>
                 <Text fontSize="sm" color="brand.ink" fontWeight="600">Coming soon...</Text>
                 <Text fontSize="xs" color="brand.muted" textAlign="center" maxW="260px">
-                  Summaries appear after the daily jobs run at 09:00 and 09:30 SGT.
+                  Summaries appear after the daily summary workflow runs at 09:00 SGT.
                 </Text>
               </VStack>
             </Center>
@@ -391,7 +410,7 @@ export default function ThisWeekDrawer({ isOpen, onClose }: Props) {
                   })}
               <Divider borderColor="brand.rule" />
               <Text fontSize="2xs" color="brand.muted" textAlign="center" pt={3} pb={2} lineHeight="1.6">
-                Updated daily Â· past 7 days
+                {footerLastRan ? `Last ran ${footerLastRan} SGT · ` : '' }Updated daily · past 7 days
               </Text>
             </VStack>
           )}

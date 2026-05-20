@@ -127,8 +127,7 @@ Workflow names and filenames are standardized by product surface:
 | Workflow name | YAML file | Scope |
 |---|---|---|
 | `Feed - Ingest` | `.github/workflows/feed_ingest.yml` | Raw feed pipeline |
-| `Summary - Top Stories` | `.github/workflows/summary_top_stories.yml` | General summary payload |
-| `Summary - AI Radar` | `.github/workflows/summary_ai_radar.yml` | AI summary payload |
+| `Summary - Overlay` | `.github/workflows/summary_overlay.yml` | Runs both General Top Stories and AI summary payloads |
 | `CI - Test` | `.github/workflows/ci_test.yml` | Ruff, pytest, frontend build |
 | `Ops - Keep Alive` | `.github/workflows/ops_keep_alive.yml` | Keep scheduled Actions alive |
 
@@ -158,7 +157,15 @@ Key constants:
 - `ASSESS_MODEL = "deepseek-v4-pro"`
 - `DISTILL_MODEL = "deepseek-v4-pro"`
 
-### Summary - Top Stories (`weekly_summary.py`)
+### Summary - Overlay (`summary_overlay.yml`)
+
+The overlay workflow runs both summary scripts sequentially:
+- `weekly_summary.py`
+- `ai_radar.py`
+
+This keeps the UI-aligned summaries under one workflow while avoiding extra quota burst from parallel summary runs.
+
+### Top Stories engine (`weekly_summary.py`)
 
 - uses `gemini-3.5-flash` for 3 grounded discovery calls:
   - `International`
@@ -173,7 +180,7 @@ Important behavior:
 - no dependency on `headlines` prompt-caching design anymore
 - return fewer topics rather than padding weak ones
 
-### Summary - AI Radar (`ai_radar.py`)
+### AI engine (`ai_radar.py`)
 
 - uses `gemini-3.5-flash` for grounded discovery in:
   - `governance`
@@ -274,7 +281,7 @@ Key tests:
 
 1. Confirm code is committed and CI is green.
 2. Delete rows from: `headlines`, `assessment_logs`, `prompt_rules`, `learning_digest`, `weekly_summary`, `ai_radar`.
-3. Trigger `workflow_dispatch` on `Feed - Ingest`, then `Summary - Top Stories`, then `Summary - AI Radar`.
+3. Trigger `workflow_dispatch` on `Feed - Ingest`, then on `Summary - Overlay`.
 4. Verify with:
 
 ```sql

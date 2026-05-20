@@ -48,7 +48,7 @@ The translation pipeline self-improves: a quality-assessment step scores each ba
 | AI | DeepSeek V4 Flash (headline + summary translation) · DeepSeek V4 Pro (assessment + rule distillation) · Gemini 3.5 Flash (Top Stories + AI discovery and selection) |
 | Database | Supabase (Postgres) |
 | Observability | Langfuse Cloud - token counts, cost, latency, translation quality scores |
-| Jobs | GitHub Actions - Feed every 3h, Top Stories daily at 09:00 SGT, AI Radar daily at 09:30 SGT |
+| Jobs | GitHub Actions - Feed every 3h, unified summary overlay daily at 09:00 SGT |
 
 ---
 
@@ -143,7 +143,6 @@ Tests cover: URL->category mapping, scraper output schema, JSON parsing, archite
 | Workflow name | YAML file | Scope |
 |---|---|---|
 | `Feed - Ingest` | `.github/workflows/feed_ingest.yml` | Raw news feed pipeline: scrape, translate, classify, assess, distill, and write `headlines` |
-| `Summary - Top Stories` | `.github/workflows/summary_top_stories.yml` | General summary payload for the sparkle drawer |
-| `Summary - AI Radar` | `.github/workflows/summary_ai_radar.yml` | AI summary payload for the sparkle drawer |
+| `Summary - Overlay` | `.github/workflows/summary_overlay.yml` | Runs both General Top Stories and AI Radar for the shared sparkle drawer |
 | `CI - Test` | `.github/workflows/ci_test.yml` | Ruff, pytest, and frontend build checks |
 | `Ops - Keep Alive` | `.github/workflows/ops_keep_alive.yml` | Scheduled maintenance ping to keep Actions active |

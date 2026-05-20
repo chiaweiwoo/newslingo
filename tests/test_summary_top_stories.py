@@ -2,6 +2,7 @@
 Unit tests for summary_top_stories.py.
 """
 
+import json
 import os
 import sys
 import types
@@ -54,27 +55,20 @@ class TestPromptContracts:
         assert "8 to 10 total topics" in prompt
         assert "Return ONLY the JSON object" in prompt
 
-
 class TestCallSummary:
     def test_call_summary_runs_three_discoveries_then_selects_and_translates(self):
         with patch.object(
             summary_top_stories,
-            "_discover_region_candidates",
+            "_call_gemini_json",
             side_effect=[
-                ([{"title": "A", "summary": "A sum", "region": "International", "theme": "Politics"}], _usage(10, 5)),
-                ([{"title": "B", "summary": "B sum", "region": "Singapore", "theme": "Society"}], _usage(12, 6)),
-                ([{"title": "C", "summary": "C sum", "region": "Malaysia", "theme": "Economy"}], _usage(14, 7)),
+                (json.dumps({"items": [{"title": "A", "summary": "A sum", "region": "International", "theme": "Politics"}]}), _usage(10, 5)),
+                (json.dumps({"items": [{"title": "B", "summary": "B sum", "region": "Singapore", "theme": "Society"}]}), _usage(12, 6)),
+                (json.dumps({"items": [{"title": "C", "summary": "C sum", "region": "Malaysia", "theme": "Economy"}]}), _usage(14, 7)),
+                (json.dumps({"topics": [{"title": "A", "summary": "A sum", "region": "International", "theme": "Politics"}]}), _usage(20, 8)),
             ],
-        ) as discover, patch.object(
+        ) as call_gemini, patch.object(
             summary_top_stories,
-            "_select_topics",
-            return_value=(
-                {"topics": [{"title": "A", "summary": "A sum", "region": "International", "theme": "Politics"}]},
-                _usage(20, 8),
-            ),
-        ) as select, patch.object(
-            summary_top_stories,
-            "_translate_topics_to_zh",
+            "_translate_to_zh",
             return_value=(
                 {
                     "topics": [
@@ -93,8 +87,7 @@ class TestCallSummary:
         ) as translate:
             payload, usage = summary_top_stories._call_summary(datetime(2026, 5, 20, tzinfo=timezone.utc))
 
-        assert discover.call_count == 3
-        select.assert_called_once()
+        assert call_gemini.call_count == 4
         translate.assert_called_once()
         assert payload["topics"][0]["title_zh"] == "甲"
         assert usage.input_tokens == 65
@@ -133,8 +126,8 @@ class TestRotation:
             call("weekly_summary"),
             call().insert(
                 {
-                    "week_start": "2026-05-13",
-                    "week_end": "2026-05-20",
+                    "window_start": "2026-05-13",
+                    "window_end": "2026-05-20",
                     "payload": {"topics": []},
                     "active": True,
                 }

@@ -389,20 +389,111 @@ def _build_prompt(source: str, base_prompt: str) -> str:
 
 
 # ── Translation ───────────────────────────────────────────────────────────────
+REPAIR_MODEL       = "deepseek-v4-flash"
+REPAIR_SYSTEM_PROMPT = (
+    "You are a JSON repair specialist. You will receive a malformed or truncated JSON response from another AI model.\n"
+    "Your goal is to fix the JSON structure so it can be parsed, preserving as much content as possible.\n\n"
+    "Rules:\n"
+    "- If the JSON is truncated, close any open strings, arrays, or objects.\n"
+    "- If the JSON is malformed (e.g. missing brackets), correct the syntax.\n"
+    "- Return ONLY the valid JSON object or array. No preamble, no explanation, no markdown fences.\n"
+    "- If the content is unsalvageable, return an empty array [] or object {} as appropriate."
+)
+THINKING_DISABLED  = {"type": "disabled"}
+
+
+def _repair_json_with_deepseek(body: str) -> str | None:
+    """Fallback: use DeepSeek to fix malformed or truncated JSON."""
+    try:
+        msg = deepseek.messages.create(
+            model=REPAIR_MODEL,
+            max_tokens=1500,
+            system=REPAIR_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": body}],
+            thinking=THINKING_DISABLED,
+        )
+
+        raw = ""
+        for block in getattr(msg, "content", []) or []:
+            if getattr(block, "type", None) == "text":
+                raw += getattr(block, "text", "")
+
+        # Try to extract from DeepSeek's output too
+        array_extracted = _extract_json_array(raw)
+        if array_extracted:
+            return array_extracted
+        return raw if raw.strip() else None
+    except Exception as e:
+        print(f"  [ingest] DeepSeek repair failed: {e}", flush=True)
+        return None
+
 
 def _extract_json_array(text: str) -> str | None:
-    """Best-effort recover a JSON array from text that may contain prose.
-
-    Strategy: find the first '[' and last ']' and return the slice. This handles
-    cases where prefill failed and the model wrapped the array in explanation,
-    or used a code fence. Returns None if no array brackets found.
-    """
     first = text.find("[")
-    last = text.rfind("]")
-    if first == -1 or last == -1 or last <= first:
+    if first == -1:
         return None
-    return text[first:last + 1]
 
+    body = text[first:]
+
+    # Try standard rfind
+    last = body.rfind("]")
+    if last != -1:
+        candidate = body[: last + 1]
+        try:
+            json.loads(candidate)
+            return candidate
+        except json.JSONDecodeError:
+            pass
+
+    # Repair logic for truncated JSON:
+    # We try to find the longest valid prefix by iteratively shortening the string
+    # and attempting to close the braces/brackets.
+    for i in range(len(body), 0, -1):
+        candidate_body = body[:i]
+
+        stack = []
+        in_string = False
+        escaped = False
+        for char in candidate_body:
+            if escaped:
+                escaped = False
+                continue
+            if char == "\\":
+                escaped = True
+                continue
+            if char == '"':
+                in_string = not in_string
+                continue
+            if not in_string:
+                if char == "[":
+                    stack.append("]")
+                elif char == "{":
+                    stack.append("}")
+                elif char == "]":
+                    if stack and stack[-1] == "]":
+                        stack.pop()
+                elif char == "}":
+                    if stack and stack[-1] == "}":
+                        stack.pop()
+
+        repaired = candidate_body
+        if in_string:
+            repaired += '"'
+
+        repaired = repaired.strip()
+        while repaired and repaired[-1] in (",", "[", "{", ":", " "):
+            repaired = repaired[:-1].strip()
+
+        if stack:
+            repaired += "".join(reversed(stack))
+
+        try:
+            json.loads(repaired)
+            return repaired
+        except json.JSONDecodeError:
+            continue
+
+    return None
 
 def _assistant_text(message: object) -> str:
     """Collect plain-text assistant blocks from an Anthropic-format response."""
@@ -489,9 +580,21 @@ def _call_model(
                 parsed = json.loads(cand)
                 if isinstance(parsed, list):
                     return parsed
-            except json.JSONDecodeError as e:
-                last_error = e
+            except json.JSONDecodeError:
                 continue
+
+        # If manual parsing failed and this is the last attempt, try DeepSeek repair
+        if attempt == 1:
+            print(f"  [llm] manual parsing failed on second attempt, trying DeepSeek repair...", flush=True)
+            repaired = _repair_json_with_deepseek(body)
+            if repaired:
+                try:
+                    parsed = json.loads(repaired)
+                    if isinstance(parsed, list):
+                        print(f"  [llm] DeepSeek repair successful", flush=True)
+                        return parsed
+                except json.JSONDecodeError:
+                    pass
 
         # All candidates failed for this attempt — log and retry
         print(

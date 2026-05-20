@@ -51,7 +51,44 @@ LOOKBACK_DAYS = 7
 AI_RADAR_MAX_TOKENS = 3000
 AI_RADAR_TRANSLATION_MAX_TOKENS = 2200
 AI_RADAR_TRANSLATION_BATCH_SIZE = 10
+AI_RADAR_REPAIR_MODEL = "deepseek-v4-flash"
+AI_RADAR_REPAIR_SYSTEM_PROMPT = (
+    "You are a JSON repair specialist. You will receive a malformed or truncated JSON response from another AI model.\n"
+    "Your goal is to fix the JSON structure so it can be parsed, preserving as much content as possible.\n\n"
+    "Rules:\n"
+    "- If the JSON is truncated, close any open strings, arrays, or objects.\n"
+    "- If the JSON is malformed (e.g. missing brackets), correct the syntax.\n"
+    "- Return ONLY the valid JSON object. No preamble, no explanation, no markdown fences.\n"
+    "- If the content is unsalvageable, return an empty items list: {\"items\": []}"
+)
 THINKING_DISABLED = {"type": "disabled"}
+
+
+def _repair_json_with_deepseek(body: str) -> str | None:
+    """Fallback: use DeepSeek to fix malformed or truncated JSON."""
+    try:
+        msg = deepseek.messages.create(
+            model=AI_RADAR_REPAIR_MODEL,
+            max_tokens=1500,
+            system=AI_RADAR_REPAIR_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": body}],
+            thinking=THINKING_DISABLED,
+        )
+
+        raw = ""
+        for block in getattr(msg, "content", []) or []:
+            if getattr(block, "type", None) == "text":
+                raw += getattr(block, "text", "")
+
+        # Use extraction on DeepSeek's output too, just in case
+        first = raw.find("{")
+        last = raw.rfind("}")
+        if first != -1 and last != -1 and last > first:
+            return raw[first : last + 1]
+        return raw if raw.strip() else None
+    except Exception as e:
+        print(f"  [ai-radar] DeepSeek repair failed: {e}", flush=True)
+        return None
 
 DISCOVERY_TOOL = genai_types.Tool(google_search=genai_types.GoogleSearch())
 
@@ -328,6 +365,19 @@ def _parse_items_payload(body: str) -> dict:
                 return parsed
         except json.JSONDecodeError:
             pass
+
+    # Fallback to DeepSeek repair
+    print("  [ai-radar] manual repair failed, attempting DeepSeek repair...", flush=True)
+    repaired = _repair_json_with_deepseek(body)
+    if repaired:
+        try:
+            parsed = json.loads(repaired)
+            if isinstance(parsed, dict) and isinstance(parsed.get("items"), list):
+                print("  [ai-radar] DeepSeek repair successful", flush=True)
+                return parsed
+        except json.JSONDecodeError:
+            pass
+
     raise ValueError(f"[ai-radar] failed to parse JSON. Body (first 400): {body[:400]!r}")
 
 

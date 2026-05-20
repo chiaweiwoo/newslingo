@@ -51,7 +51,45 @@ LOOKBACK_DAYS = 7
 MIN_NEW_HEADLINES = 30
 SUMMARY_MAX_TOKENS = 6000
 SUMMARY_TRANSLATION_MAX_TOKENS = 2200
+SUMMARY_REPAIR_MODEL = "deepseek-v4-flash"
+SUMMARY_REPAIR_SYSTEM_PROMPT = (
+    "You are a JSON repair specialist. You will receive a malformed or truncated JSON response from another AI model.\n"
+    "Your goal is to fix the JSON structure so it can be parsed, preserving as much content as possible.\n\n"
+    "Rules:\n"
+    "- If the JSON is truncated, close any open strings, arrays, or objects.\n"
+    "- If the JSON is malformed (e.g. missing brackets), correct the syntax.\n"
+    "- Return ONLY the valid JSON object. No preamble, no explanation, no markdown fences.\n"
+    "- If the content is unsalvageable, return an empty items/topics list as appropriate."
+)
 THINKING_DISABLED = {"type": "disabled"}
+
+
+def _repair_json_with_deepseek(body: str) -> str | None:
+    """Fallback: use DeepSeek to fix malformed or truncated JSON."""
+    try:
+        msg = deepseek.messages.create(
+            model=SUMMARY_REPAIR_MODEL,
+            max_tokens=1500,
+            system=SUMMARY_REPAIR_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": body}],
+            thinking=THINKING_DISABLED,
+        )
+
+        raw = ""
+        for block in getattr(msg, "content", []) or []:
+            if getattr(block, "type", None) == "text":
+                raw += getattr(block, "text", "")
+
+        # Use extraction on DeepSeek's output too
+        first = raw.find("{")
+        last = raw.rfind("}")
+        if first != -1 and last != -1 and last > first:
+            return raw[first : last + 1]
+        return raw if raw.strip() else None
+    except Exception as e:
+        print(f"  [summary] DeepSeek repair failed: {e}", flush=True)
+        return None
+
 
 THEMES = ["Politics", "Economy", "Society", "Security", "Technology", "Environment"]
 VALID_REGIONS = {"International", "Singapore", "Malaysia"}
@@ -175,18 +213,129 @@ CHINESE_TRANSLATION_SYSTEM_PROMPT = (
 
 def _extract_json_object(text: str) -> str | None:
     first = text.find("{")
-    last = text.rfind("}")
-    if first == -1 or last == -1 or last <= first:
+    if first == -1:
         return None
-    return text[first : last + 1]
+
+    body = text[first:]
+
+    # Try standard rfind approach first
+    last = body.rfind("}")
+    if last != -1:
+        candidate = body[: last + 1]
+        try:
+            json.loads(candidate)
+            return candidate
+        except json.JSONDecodeError:
+            pass
+
+    # Repair logic for truncated JSON:
+    # We try to find the longest valid prefix by iteratively shortening the string
+    # and attempting to close the braces/brackets.
+    for i in range(len(body), 0, -1):
+        candidate_body = body[:i]
+
+        stack = []
+        in_string = False
+        escaped = False
+        for char in candidate_body:
+            if escaped:
+                escaped = False
+                continue
+            if char == "\\":
+                escaped = True
+                continue
+            if char == '"':
+                in_string = not in_string
+                continue
+            if not in_string:
+                if char == "{":
+                    stack.append("}")
+                elif char == "[":
+                    stack.append("]")
+                elif char == "}":
+                    if stack and stack[-1] == "}":
+                        stack.pop()
+                elif char == "]":
+                    if stack and stack[-1] == "]":
+                        stack.pop()
+
+        repaired = candidate_body
+        if in_string:
+            repaired += '"'
+
+        repaired = repaired.strip()
+        while repaired and repaired[-1] in (",", "[", "{", ":", " "):
+            repaired = repaired[:-1].strip()
+
+        if stack:
+            repaired += "".join(reversed(stack))
+
+        try:
+            json.loads(repaired)
+            return repaired
+        except json.JSONDecodeError:
+            continue
+
+    return None
 
 
 def _extract_json_array(text: str) -> str | None:
     first = text.find("[")
-    last = text.rfind("]")
-    if first == -1 or last == -1 or last <= first:
+    if first == -1:
         return None
-    return text[first : last + 1]
+
+    body = text[first:]
+
+    # Standard rfind
+    last = body.rfind("]")
+    if last != -1:
+        candidate = body[: last + 1]
+        try:
+            json.loads(candidate)
+            return candidate
+        except json.JSONDecodeError:
+            pass
+
+    # Basic repair
+    stack = []
+    in_string = False
+    escaped = False
+    for char in body:
+        if escaped:
+            escaped = False
+            continue
+        if char == "\\":
+            escaped = True
+            continue
+        if char == '"':
+            in_string = not in_string
+            continue
+        if not in_string:
+            if char == "[":
+                stack.append("]")
+            elif char == "{":
+                stack.append("}")
+            elif char == "]":
+                if stack and stack[-1] == "]":
+                    stack.pop()
+            elif char == "}":
+                if stack and stack[-1] == "}":
+                    stack.pop()
+
+    repaired = body
+    if in_string:
+        repaired += '"'
+    else:
+        repaired = repaired.rstrip().rstrip(",")
+
+    if stack:
+        repaired += "".join(reversed(stack))
+
+    try:
+        json.loads(repaired)
+        return repaired
+    except json.JSONDecodeError:
+        return None
 
 
 def _gemini_text(response: object) -> str:
@@ -233,12 +382,23 @@ def _parse_topics(body: str, label: str) -> dict:
     if extracted:
         try:
             parsed = json.loads(extracted)
-            if isinstance(parsed, dict):
-                topics = parsed.get("topics")
-                if isinstance(topics, list):
-                    return parsed
+            if isinstance(parsed, dict) and isinstance(parsed.get("topics"), list):
+                return parsed
         except json.JSONDecodeError:
             pass
+
+    # Fallback to DeepSeek repair
+    print(f"  [summary] {label}: manual repair failed, attempting DeepSeek repair...", flush=True)
+    repaired = _repair_json_with_deepseek(body)
+    if repaired:
+        try:
+            parsed = json.loads(repaired)
+            if isinstance(parsed, dict) and isinstance(parsed.get("topics"), list):
+                print(f"  [summary] {label}: DeepSeek repair successful", flush=True)
+                return parsed
+        except json.JSONDecodeError:
+            pass
+
     raise ValueError(f"[summary] {label}: failed to parse JSON. Body (first 400): {body[:400]!r}")
 
 
@@ -252,6 +412,20 @@ def _parse_items(body: str, label: str) -> list[dict]:
                 return items
         except json.JSONDecodeError:
             pass
+
+    # Fallback to DeepSeek repair
+    print(f"  [summary] {label}: manual repair failed, attempting DeepSeek repair...", flush=True)
+    repaired = _repair_json_with_deepseek(body)
+    if repaired:
+        try:
+            parsed = json.loads(repaired)
+            items = parsed.get("items")
+            if isinstance(items, list):
+                print(f"  [summary] {label}: DeepSeek repair successful", flush=True)
+                return items
+        except json.JSONDecodeError:
+            pass
+
     raise ValueError(f"[summary] {label}: failed to parse JSON. Body (first 400): {body[:400]!r}")
 
 
@@ -292,64 +466,15 @@ def _call_gemini_json(
     return _gemini_text(response), _gemini_usage(response)
 
 
-def _discover_region_candidates(today_utc: datetime, spec: dict) -> tuple[list[dict], types.SimpleNamespace]:
-    today_label = today_utc.date().isoformat()
-    user_prompt = (
-        f"Today's UTC date is {today_label}.\n"
-        f"Build candidate Top Stories for region: {spec['region']}.\n"
-        f"{spec['count_guidance']}\n"
-        f"{spec['focus']}\n"
-        "Return only developments from the last 7 days."
-    )
-    body, usage = _call_gemini_json(
-        SUMMARY_DISCOVERY_MODEL,
-        DISCOVERY_SYSTEM_PROMPT,
-        user_prompt,
-        use_search=True,
-        max_output_tokens=SUMMARY_MAX_TOKENS,
-    )
-    items = []
-    for item in _parse_items(body, f"discover-{spec['region'].lower()}"):
-        clean = _sanitize_topic(item)
-        if clean:
-            items.append(clean)
-    return items, usage
-
-
-def _select_topics(candidates: list[dict]) -> tuple[dict, types.SimpleNamespace]:
-    user_prompt = (
-        "Select the final Top Stories from these grounded candidates.\n\n"
-        f"CANDIDATES:\n{json.dumps({'items': candidates}, ensure_ascii=False, indent=2)}"
-    )
-    body, usage = _call_gemini_json(
-        SUMMARY_MODEL,
-        SELECTION_SYSTEM_PROMPT,
-        user_prompt,
-        use_search=False,
-        max_output_tokens=SUMMARY_MAX_TOKENS,
-    )
-    parsed = _parse_topics(body, "select")
-    topics = []
-    for topic in parsed.get("topics", []):
-        clean = _sanitize_topic(topic)
-        if clean:
-            topics.append(clean)
-    return {"topics": topics}, usage
-
-
-def _translate_topics_to_zh(payload: dict) -> tuple[dict, types.SimpleNamespace]:
-    topics = payload.get("topics", [])
-    if not topics:
-        return payload, types.SimpleNamespace(input_tokens=0, output_tokens=0)
-
-    lines = []
-    for idx, topic in enumerate(topics):
-        lines.append(f"IDX: {idx}")
-        lines.append(f"TITLE: {topic['title']}")
-        lines.append(f"SUMMARY: {topic['summary']}")
+def _translate_to_zh(topics: list[dict]) -> tuple[dict, object]:
+    lines: list[str] = []
+    for i, t in enumerate(topics):
+        lines.append(f"IDX: {i}")
+        lines.append(f"TITLE: {t['title']}")
+        lines.append(f"SUMMARY: {t['summary']}")
         lines.append("")
-    slim_input = "\n".join(lines).strip()
 
+    slim_input = "\n".join(lines).strip()
     msg = deepseek.messages.create(
         model=SUMMARY_TRANSLATION_MODEL,
         max_tokens=SUMMARY_TRANSLATION_MAX_TOKENS,
@@ -377,65 +502,89 @@ def _translate_topics_to_zh(payload: dict) -> tuple[dict, types.SimpleNamespace]
     return {"topics": topics}, _deepseek_usage(msg)
 
 
-@observe(as_type="generation")
+@observe(name="summary:generate", as_type="generation")
 def _call_summary(today_utc: datetime) -> tuple[dict, object]:
     all_candidates: list[dict] = []
     total_input = 0
     total_output = 0
 
     for spec in REGION_DISCOVERY_SPECS:
-        with _langfuse_client().start_as_current_observation(
-            name=f"summary:discover-{spec['region'].lower()}",
-            as_type="generation",
-            model=SUMMARY_DISCOVERY_MODEL,
-        ) as obs:
-            items, usage = _discover_region_candidates(today_utc, spec)
-            obs.update(usage_details={"input": usage.input_tokens, "output": usage.output_tokens})
-        all_candidates.extend(items)
+        region = spec["region"]
+        print(f"  [summary] discovering candidates for {region}...", flush=True)
+
+        today_label = today_utc.date().isoformat()
+        user_prompt = (
+            f"Today's UTC date is {today_label}.\n"
+            f"Discover important {region} news from the last {LOOKBACK_DAYS} days.\n"
+            f"{spec['count_guidance']}\n"
+            f"Focus: {spec['focus']}"
+        )
+
+        body, usage = _call_gemini_json(
+            SUMMARY_DISCOVERY_MODEL,
+            DISCOVERY_SYSTEM_PROMPT,
+            user_prompt,
+            use_search=True,
+            max_output_tokens=SUMMARY_MAX_TOKENS,
+        )
         total_input += usage.input_tokens
         total_output += usage.output_tokens
-        print(
-            f"[summary] discovery {spec['region'].lower()}: {len(items)} candidates",
-            flush=True,
-        )
 
-    with _langfuse_client().start_as_current_observation(
-        name="summary:select",
-        as_type="generation",
-        model=SUMMARY_MODEL,
-    ) as obs:
-        payload, selection_usage = _select_topics(all_candidates)
-        obs.update(
-            usage_details={
-                "input": selection_usage.input_tokens,
-                "output": selection_usage.output_tokens,
-            }
-        )
-    total_input += selection_usage.input_tokens
-    total_output += selection_usage.output_tokens
-    print(f"[summary] select: {len(payload.get('topics', []))} final topics", flush=True)
+        items = _parse_items(body, f"discover-{region.lower()}")
+        for it in items:
+            it["region"] = region  # enforce consistency
+            all_candidates.append(it)
 
-    with _langfuse_client().start_as_current_observation(
-        name="summary:translate-zh",
-        as_type="generation",
-        model=SUMMARY_TRANSLATION_MODEL,
-    ) as obs:
-        translated, translation_usage = _translate_topics_to_zh(payload)
-        obs.update(
-            usage_details={
-                "input": translation_usage.input_tokens,
-                "output": translation_usage.output_tokens,
-            }
-        )
-    total_input += translation_usage.input_tokens
-    total_output += translation_usage.output_tokens
+    print(f"  [summary] selecting top stories from {len(all_candidates)} candidates...", flush=True)
+    candidate_lines = []
+    for i, it in enumerate(all_candidates):
+        candidate_lines.append(f"IDX: {i}")
+        candidate_lines.append(f"REGION: {it.get('region')}")
+        candidate_lines.append(f"TITLE: {it.get('title')}")
+        candidate_lines.append(f"SUMMARY: {it.get('summary')}")
+        candidate_lines.append("")
 
-    combined = types.SimpleNamespace(input_tokens=total_input, output_tokens=total_output)
+    selection_user_prompt = "CANDIDATE LIST:\n\n" + "\n".join(candidate_lines).strip()
+    body, usage = _call_gemini_json(
+        SUMMARY_MODEL,
+        SELECTION_SYSTEM_PROMPT,
+        selection_user_prompt,
+        use_search=False,
+        max_output_tokens=SUMMARY_MAX_TOKENS,
+    )
+    total_input += usage.input_tokens
+    total_output += usage.output_tokens
+
+    topics_payload = _parse_topics(body, "select")
+    raw_topics = topics_payload.get("topics", [])
+    sanitized = []
+    for t in raw_topics:
+        st = _sanitize_topic(t)
+        if st:
+            sanitized.append(st)
+
+    print(f"  [summary] translating {len(sanitized)} topics to Chinese...", flush=True)
+    payload, trans_usage = _translate_to_zh(sanitized)
+    total_input += trans_usage.input_tokens
+    total_output += trans_usage.output_tokens
+
     _langfuse_client().update_current_generation(
         model=SUMMARY_MODEL,
-        usage_details={"input": combined.input_tokens, "output": combined.output_tokens},
+        usage_details={"input": total_input, "output": total_output},
     )
-    return translated, combined
+
+    combined_usage = types.SimpleNamespace(input_tokens=total_input, output_tokens=total_output)
+    return payload, combined_usage
+
+
+def _get_new_headlines_count(window_start: str) -> int:
+    result = (
+        supabase.table("headlines")
+        .select("id", count="exact")
+        .gte("created_at", window_start)
+        .execute()
+    )
+    return result.count or 0
 
 
 def _load_previous_summary() -> dict | None:
@@ -456,8 +605,8 @@ def _store_summary(now: datetime, payload: dict, previous: dict | None) -> None:
 
     supabase.table("weekly_summary").insert(
         {
-            "week_start": (now - timedelta(days=LOOKBACK_DAYS)).date().isoformat(),
-            "week_end": now.date().isoformat(),
+            "window_start": (now - timedelta(days=LOOKBACK_DAYS)).date().isoformat(),
+            "window_end": now.date().isoformat(),
             "payload": payload,
             "active": True,
         }
@@ -465,17 +614,22 @@ def _store_summary(now: datetime, payload: dict, previous: dict | None) -> None:
 
 
 def _main() -> None:
-    print("[summary] NewsLingo Top Stories summary job starting", flush=True)
+    print("[summary] NewsLingo Top Stories job starting", flush=True)
 
     try:
         now = datetime.now(timezone.utc)
+        window_start = (now - timedelta(days=LOOKBACK_DAYS)).isoformat()
+
+        new_count = _get_new_headlines_count(window_start)
+        if new_count < MIN_NEW_HEADLINES:
+            print(f"[summary] skipping: only {new_count} headlines in last {LOOKBACK_DAYS} days", flush=True)
+            return
+
         previous = _load_previous_summary()
         payload, _usage = _call_summary(now)
-        topic_count = len(payload.get("topics", []))
-        print(f"[summary] final: {topic_count} topic clusters", flush=True)
-        if not topic_count:
-            print("[summary] no topics returned - skipping storage", flush=True)
-            return
+        total_topics = len(payload.get("topics", []))
+        print(f"[summary] generated {total_topics} topics from {new_count} headlines", flush=True)
+
         _store_summary(now, payload, previous)
         print("[summary] summary updated successfully", flush=True)
     except Exception as e:

@@ -1,0 +1,11 @@
+<svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Newslingo compass option B</title>
+  <desc id="desc">Compass mark with a slightly more editorial rose feel.</desc>
+  <circle cx="20" cy="20" r="11.75" stroke="#7CEBDD" stroke-width="3"/>
+  <path d="M20 8.75V11.1" stroke="#7CEBDD" stroke-width="2.2" stroke-linecap="round"/>
+  <path d="M20 28.9V31.25" stroke="#0F766E" stroke-width="1.8" stroke-linecap="round" opacity="0.9"/>
+  <path d="M26.1 13.9L21.4 24.3C21.1 24.9 20.4 25 19.9 24.5L15.5 20.1C15 19.6 15.1 18.9 15.7 18.6L26.1 13.9Z" fill="#0F766E"/>
+  <path d="M13.9 26.1L18.6 15.7C18.9 15.1 19.6 15 20.1 15.5L24.5 19.9C25 20.4 24.9 21.1 24.3 21.4L13.9 26.1Z" fill="#7CEBDD"/>
+  <circle cx="20" cy="20" r="2.1" fill="#F8FAFC"/>
+  <path d="M27.8 12.2L28.6 14.4L30.8 15.2L28.6 16L27.8 18.2L27 16L24.8 15.2L27 14.4L27.8 12.2Z" fill="#7CEBDD"/>
+</svg>

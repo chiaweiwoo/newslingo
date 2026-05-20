@@ -1,16 +1,14 @@
 import React, { useMemo, useState } from 'react';
 import {
+  Badge,
   Box,
   Center,
   Divider,
-  Drawer,
-  DrawerBody,
-  DrawerCloseButton,
-  DrawerContent,
-  DrawerHeader,
-  DrawerOverlay,
+  Flex,
+  Grid,
   HStack,
   Spinner,
+  Stack,
   Text,
   VStack,
 } from '@chakra-ui/react';
@@ -25,6 +23,7 @@ const supabase = createClient(
 type Region = 'International' | 'Malaysia' | 'Singapore';
 type RadarKey = 'governance' | 'product' | 'infrastructure';
 type DigestLang = 'en' | 'zh' | 'bi';
+type FrameMode = 'desktop' | 'mobile';
 
 interface Topic {
   title: string;
@@ -90,7 +89,7 @@ function formatRender(mode: DigestLang, en?: string, zh?: string) {
   return { en: en || '', zh: zh || '' };
 }
 
-function ModeButton({
+function ToggleButton({
   active,
   label,
   onClick,
@@ -105,20 +104,17 @@ function ModeButton({
       onClick={onClick}
       px={3}
       py={1.5}
-      borderRadius="6px"
+      borderRadius="999px"
       border="1px solid"
-      borderColor={active ? '#c8102e' : '#d6dae1'}
-      bg={active ? '#c8102e' : '#ffffff'}
+      borderColor={active ? '#111827' : '#d4dbe6'}
+      bg={active ? '#111827' : '#ffffff'}
       color={active ? '#ffffff' : '#5b6470'}
-      fontSize="2xs"
+      fontSize="11px"
       fontWeight="700"
-      letterSpacing="wide"
+      letterSpacing="0.08em"
       lineHeight="1.4"
       transition="all 0.15s"
-      _hover={{ color: active ? '#ffffff' : '#101418', borderColor: active ? '#c8102e' : '#b8c0cc' }}
-      flex="1 1 0"
-      minW={0}
-      textAlign="center"
+      _hover={{ color: active ? '#ffffff' : '#111827', borderColor: '#b8c0cc' }}
       whiteSpace="nowrap"
     >
       {label}
@@ -135,35 +131,35 @@ function EmailLine({
   mode: DigestLang;
   isTitle?: boolean;
 }) {
-  const titleProps = isTitle
+  const baseProps = isTitle
     ? {
         fontSize: 'sm',
         fontWeight: '700',
-        color: 'brand.ink',
+        color: '#111827',
         lineHeight: '1.45',
         fontFamily: "'Noto Serif SC', 'Georgia', serif",
       }
     : {
         fontSize: 'xs',
-        color: 'brand.muted',
-        lineHeight: '1.7',
+        color: '#46505c',
+        lineHeight: '1.75',
       };
 
   if (mode === 'bi' && typeof value !== 'string') {
     return (
       <VStack spacing={0.5} align="stretch">
-        <Text {...titleProps}>{value.en}</Text>
-        <Text {...titleProps} color={isTitle ? 'brand.red' : 'brand.ink'}>
+        <Text {...baseProps}>{value.en}</Text>
+        <Text {...baseProps} color={isTitle ? '#9f1239' : '#111827'}>
           {value.zh}
         </Text>
       </VStack>
     );
   }
 
-  return <Text {...titleProps}>{typeof value === 'string' ? value : value.en || value.zh}</Text>;
+  return <Text {...baseProps}>{typeof value === 'string' ? value : value.en || value.zh}</Text>;
 }
 
-function DigestItem({
+function DigestStoryCard({
   mode,
   titleEn,
   titleZh,
@@ -178,41 +174,103 @@ function DigestItem({
   bodyZh?: string;
   eyebrow?: string;
 }) {
-  const title = formatRender(mode, titleEn, titleZh);
-  const body = formatRender(mode, bodyEn, bodyZh);
-
   return (
-    <Box py={3}>
+    <Box
+      bg="#ffffff"
+      border="1px solid"
+      borderColor="#e5e9f0"
+      borderRadius="16px"
+      px={3.5}
+      py={3.5}
+      boxShadow="0 10px 30px rgba(15, 23, 42, 0.05)"
+    >
       {eyebrow ? (
-        <Text
-          fontSize="2xs"
-          fontWeight="700"
+        <Badge
+          bg="#f3f4f6"
           color="#5b6470"
+          borderRadius="999px"
+          px={2}
+          py={0.5}
+          fontSize="10px"
+          fontWeight="700"
+          letterSpacing="0.08em"
           textTransform="uppercase"
-          letterSpacing="wider"
-          mb={1.5}
+          mb={2}
         >
           {eyebrow}
-        </Text>
+        </Badge>
       ) : null}
-      <EmailLine value={title} mode={mode} isTitle />
-      <Box mt={1.5}>
-        <EmailLine value={body} mode={mode} />
+      <EmailLine value={formatRender(mode, titleEn, titleZh)} mode={mode} isTitle />
+      <Box mt={2}>
+        <EmailLine value={formatRender(mode, bodyEn, bodyZh)} mode={mode} />
       </Box>
     </Box>
   );
 }
 
-interface Props {
-  isOpen: boolean;
-  onClose: () => void;
+function SectionColumn({
+  title,
+  accent,
+  emptyLabel,
+  children,
+}: {
+  title: string;
+  accent: string;
+  emptyLabel: string;
+  children: React.ReactNode;
+}) {
+  const childCount = React.Children.count(children);
+
+  return (
+    <Box
+      bg="#f8fafc"
+      border="1px solid"
+      borderColor="#e2e8f0"
+      borderRadius="20px"
+      px={3.5}
+      py={3.5}
+    >
+      <HStack justify="space-between" align="center" mb={3}>
+        <Text
+          fontSize="11px"
+          fontWeight="700"
+          color="#475569"
+          textTransform="uppercase"
+          letterSpacing="0.1em"
+        >
+          {title}
+        </Text>
+        <Box w="10px" h="10px" borderRadius="full" bg={accent} />
+      </HStack>
+
+      {childCount ? (
+        <VStack spacing={3} align="stretch">
+          {children}
+        </VStack>
+      ) : (
+        <Box
+          border="1px dashed"
+          borderColor="#d4dbe6"
+          borderRadius="14px"
+          px={3}
+          py={4}
+          bg="#ffffff"
+        >
+          <Text fontSize="xs" color="#6b7280" lineHeight="1.7">
+            {emptyLabel}
+          </Text>
+        </Box>
+      )}
+    </Box>
+  );
 }
 
-export default function DigestPreviewDrawer({ isOpen, onClose }: Props) {
+export default function DigestPreviewPage() {
   const [mode, setMode] = useState<DigestLang>('bi');
+  const [frameMode, setFrameMode] = useState<FrameMode>('desktop');
 
   const { data, isLoading } = useQuery({
-    queryKey: ['digest-preview'],
+    queryKey: ['digest-preview-page'],
     queryFn: async (): Promise<{ summary: SummaryRow | null; radar: RadarRow | null }> => {
       const [summaryResult, radarResult] = await Promise.all([
         supabase
@@ -236,7 +294,6 @@ export default function DigestPreviewDrawer({ isOpen, onClose }: Props) {
         radar: (radarResult.data as RadarRow | null) ?? null,
       };
     },
-    enabled: isOpen,
     staleTime: 0,
   });
 
@@ -263,156 +320,191 @@ export default function DigestPreviewDrawer({ isOpen, onClose }: Props) {
   );
 
   const digestDate = formatDigestDate(data?.summary?.created_at, data?.radar?.created_at);
-  const hasAnyContent = topics.length > 0 || categories.some((category) => category.items?.length);
+  const totalAiItems = categories.reduce((sum, category) => sum + (category.items?.length ?? 0), 0);
+  const frameWidth = frameMode === 'mobile' ? '390px' : 'min(100%, 880px)';
 
   return (
-    <Drawer isOpen={isOpen} placement="bottom" onClose={onClose}>
-      <DrawerOverlay />
-      <DrawerContent
-        maxH="86vh"
-        style={{ maxWidth: '600px', marginLeft: 'auto', marginRight: 'auto' }}
-        borderTopRadius="18px"
-        bg="#eef2f7"
-      >
-        <DrawerCloseButton color="#5b6470" mt={1} />
-
-        <DrawerHeader borderBottom="1px solid" borderColor="#d6dae1" pb={3} pt={4}>
-          <VStack spacing={3} align="stretch">
-            <HStack justify="space-between" align="flex-start" pr={6}>
-              <Box>
-                <Text
-                  fontSize="md"
-                  fontWeight="700"
-                  color="#101418"
-                  lineHeight="1.2"
-                  fontFamily="'Noto Serif SC', 'Georgia', serif"
-                >
-                  Email Preview
-                </Text>
-                <Text fontSize="xs" color="#5b6470" fontWeight="400" mt={0.5}>
-                  Mocked as a compact inbox email, not a normal app drawer.
-                </Text>
-              </Box>
+    <Box
+      minH="100vh"
+      bg="linear-gradient(180deg, #edf2f7 0%, #e7edf6 42%, #f6f8fb 100%)"
+      px={{ base: 3, md: 6 }}
+      py={{ base: 4, md: 8 }}
+    >
+      <Box maxW="1240px" mx="auto">
+        <Grid templateColumns={{ base: '1fr', xl: '280px minmax(0, 1fr)' }} gap={6}>
+          <Box>
+            <Box
+              bg="#ffffff"
+              border="1px solid"
+              borderColor="#dce3ec"
+              borderRadius="24px"
+              px={4}
+              py={4}
+              boxShadow="0 18px 40px rgba(15, 23, 42, 0.06)"
+              position={{ xl: 'sticky' }}
+              top={{ xl: '24px' }}
+            >
               <Text
-                fontSize="2xs"
-                color="#7b8491"
-                textTransform="uppercase"
-                letterSpacing="wider"
+                fontSize="lg"
                 fontWeight="700"
-                pt={0.5}
+                color="#111827"
+                lineHeight="1.15"
+                fontFamily="'Noto Serif SC', 'Georgia', serif"
               >
-                Gmail view
+                Email Preview
               </Text>
-            </HStack>
+              <Text fontSize="xs" color="#5b6470" lineHeight="1.7" mt={1.5}>
+                Standalone preview page for the daily digest, shown as if the email is opened in a mail client.
+              </Text>
 
-            <HStack spacing={2}>
-              <ModeButton active={mode === 'en'} label="EN" onClick={() => setMode('en')} />
-              <ModeButton active={mode === 'zh'} label="中" onClick={() => setMode('zh')} />
-              <ModeButton active={mode === 'bi'} label="EN + 中" onClick={() => setMode('bi')} />
-            </HStack>
-          </VStack>
-        </DrawerHeader>
+              <Divider my={4} borderColor="#e5e9f0" />
 
-        <DrawerBody py={4} px={3} overflowY="auto" bg="#eef2f7">
-          {isLoading ? (
-            <Center py={10}>
-              <Spinner color="#c8102e" size="md" />
-            </Center>
-          ) : !hasAnyContent ? (
-            <Center py={10}>
-              <Text fontSize="xs" color="#5b6470">No digest data available yet.</Text>
-            </Center>
-          ) : (
-            <VStack spacing={3} align="stretch">
-              <Box
-                bg="#dfe5ee"
-                border="1px solid"
-                borderColor="#cfd6e0"
-                borderRadius="10px"
-                px={3}
-                py={2.5}
-              >
-                <HStack justify="space-between" align="center">
-                  <Text fontSize="2xs" color="#5b6470" fontWeight="700" textTransform="uppercase" letterSpacing="wider">
-                    Inbox
-                  </Text>
-                  <Text fontSize="2xs" color="#7b8491">
-                    1 message selected
-                  </Text>
+              <Text fontSize="11px" fontWeight="700" color="#475569" textTransform="uppercase" letterSpacing="0.1em" mb={2}>
+                Language
+              </Text>
+              <HStack spacing={2} flexWrap="wrap">
+                <ToggleButton active={mode === 'en'} label="EN" onClick={() => setMode('en')} />
+                <ToggleButton active={mode === 'zh'} label="中" onClick={() => setMode('zh')} />
+                <ToggleButton active={mode === 'bi'} label="EN + 中" onClick={() => setMode('bi')} />
+              </HStack>
+
+              <Text fontSize="11px" fontWeight="700" color="#475569" textTransform="uppercase" letterSpacing="0.1em" mt={5} mb={2}>
+                View
+              </Text>
+              <HStack spacing={2} flexWrap="wrap">
+                <ToggleButton active={frameMode === 'desktop'} label="Desktop" onClick={() => setFrameMode('desktop')} />
+                <ToggleButton active={frameMode === 'mobile'} label="Mobile" onClick={() => setFrameMode('mobile')} />
+              </HStack>
+
+              <Divider my={4} borderColor="#e5e9f0" />
+
+              <VStack align="stretch" spacing={2}>
+                <HStack justify="space-between">
+                  <Text fontSize="xs" color="#5b6470">Top Stories</Text>
+                  <Text fontSize="xs" color="#111827" fontWeight="700">{topics.length}</Text>
                 </HStack>
-              </Box>
+                <HStack justify="space-between">
+                  <Text fontSize="xs" color="#5b6470">AI items</Text>
+                  <Text fontSize="xs" color="#111827" fontWeight="700">{totalAiItems}</Text>
+                </HStack>
+                <HStack justify="space-between">
+                  <Text fontSize="xs" color="#5b6470">Date</Text>
+                  <Text fontSize="xs" color="#111827" fontWeight="700">{digestDate || '-'}</Text>
+                </HStack>
+              </VStack>
+            </Box>
+          </Box>
 
-              <Box
-                bg="#ffffff"
-                border="1px solid"
-                borderColor="#d6dae1"
-                borderRadius="14px"
-                boxShadow="0 18px 40px rgba(15, 23, 42, 0.10)"
-                overflow="hidden"
-              >
-                <Box px={4} py={3.5} borderBottom="1px solid" borderColor="#eceff4">
-                  <Text
-                    fontSize="lg"
-                    fontWeight="700"
-                    color="#101418"
-                    lineHeight="1.2"
-                    fontFamily="'Noto Serif SC', 'Georgia', serif"
+          <Center alignItems="flex-start">
+            {isLoading ? (
+              <Center py={20}>
+                <Spinner color="#c8102e" size="lg" />
+              </Center>
+            ) : (
+              <Box w={frameWidth} transition="width 0.2s ease">
+                <Box
+                  bg="#dfe6ef"
+                  border="1px solid"
+                  borderColor="#d2d9e4"
+                  borderRadius={frameMode === 'mobile' ? '36px' : '24px'}
+                  p={frameMode === 'mobile' ? 3 : 4}
+                  boxShadow="0 30px 60px rgba(15, 23, 42, 0.14)"
+                >
+                  <Box
+                    bg="#f7f9fc"
+                    border="1px solid"
+                    borderColor="#d8e0ea"
+                    borderRadius={frameMode === 'mobile' ? '30px' : '20px'}
+                    overflow="hidden"
                   >
-                    NewsLingo Daily Brief
-                  </Text>
-                  <Text fontSize="2xs" color="#5b6470" mt={1}>
-                    to me
-                  </Text>
-                </Box>
+                    {frameMode === 'mobile' ? (
+                      <Center py={2}>
+                        <Box w="72px" h="6px" borderRadius="999px" bg="#c7d0dc" />
+                      </Center>
+                    ) : null}
 
-                <Box px={4} py={3} bg="#fafbfd" borderBottom="1px solid" borderColor="#eceff4">
-                  <HStack justify="space-between" align="flex-start">
-                    <Box minW={0}>
-                      <Text fontSize="xs" color="#101418" fontWeight="700">
-                        From: NewsLingo
-                      </Text>
-                      <Text fontSize="2xs" color="#5b6470" mt={0.5}>
-                        {digestDate || 'Latest available summary'}
-                      </Text>
+                    <Box px={{ base: 3.5, md: 4 }} py={3} borderBottom="1px solid" borderColor="#e4eaf1" bg="#eef3f8">
+                      <HStack justify="space-between" align="center">
+                        <Text fontSize="11px" color="#475569" fontWeight="700" textTransform="uppercase" letterSpacing="0.12em">
+                          Gmail preview
+                        </Text>
+                        <Text fontSize="11px" color="#7b8491">
+                          Opened message
+                        </Text>
+                      </HStack>
                     </Box>
-                    <Text fontSize="2xs" color="#7b8491" whiteSpace="nowrap" pl={3}>
-                      mobile + web
-                    </Text>
-                  </HStack>
-                </Box>
 
-                <Box px={4} py={4}>
-                  <VStack spacing={0} align="stretch">
-                    <Text
-                      fontSize="2xs"
-                      fontWeight="700"
-                      color="#c8102e"
-                      textTransform="uppercase"
-                      letterSpacing="wider"
-                      mb={2}
-                    >
-                      Top Stories
-                    </Text>
-                    <VStack spacing={0} align="stretch">
-                      {NEWS_SECTIONS.map(({ key, label }) => {
-                        const items = topicsByRegion[key];
-                        return (
-                          <Box key={key} pt={1} pb={2}>
+                    <Box px={{ base: 3.5, md: 5 }} py={{ base: 4, md: 5 }} bg="#ffffff">
+                      <Box
+                        borderRadius="24px"
+                        px={{ base: 4, md: 5 }}
+                        py={{ base: 4, md: 5 }}
+                        bg="linear-gradient(135deg, #0f172a 0%, #162033 52%, #1f2a44 100%)"
+                        color="#ffffff"
+                      >
+                        <HStack justify="space-between" align="flex-start" spacing={4}>
+                          <Box minW={0}>
                             <Text
-                              fontSize="2xs"
+                              fontSize={{ base: '2xl', md: '3xl' }}
                               fontWeight="700"
-                              color="#5b6470"
-                              textTransform="uppercase"
-                              letterSpacing="wider"
-                              mb={1}
+                              lineHeight="1.05"
+                              fontFamily="'Noto Serif SC', 'Georgia', serif"
                             >
-                              {label}
+                              NewsLingo Daily Brief
                             </Text>
-                            {items.length ? (
-                              items.map((topic, index) => (
-                                <Box key={`${topic.title}-${index}`}>
-                                  {index > 0 && <Divider borderColor="#eceff4" />}
-                                  <DigestItem
+                            <Text fontSize="sm" color="rgba(255,255,255,0.76)" mt={2} maxW="520px" lineHeight="1.7">
+                              A compact bilingual scan of the most important general and AI developments from the past 7 days.
+                            </Text>
+                          </Box>
+                          <Badge
+                            alignSelf="flex-start"
+                            bg="rgba(255,255,255,0.12)"
+                            color="#f8fafc"
+                            borderRadius="999px"
+                            px={3}
+                            py={1.5}
+                            fontSize="10px"
+                            fontWeight="700"
+                            letterSpacing="0.08em"
+                            textTransform="uppercase"
+                            whiteSpace="nowrap"
+                          >
+                            {digestDate || 'Latest'}
+                          </Badge>
+                        </HStack>
+
+                        <HStack spacing={2} mt={4} flexWrap="wrap">
+                          <Badge bg="#ffffff" color="#111827" borderRadius="999px" px={2.5} py={1} fontSize="10px">
+                            {topics.length} Top Stories
+                          </Badge>
+                          <Badge bg="#fde8ef" color="#9f1239" borderRadius="999px" px={2.5} py={1} fontSize="10px">
+                            {totalAiItems} AI Updates
+                          </Badge>
+                        </HStack>
+                      </Box>
+
+                      <Stack spacing={6} mt={6}>
+                        <Box>
+                          <HStack justify="space-between" align="baseline" mb={3}>
+                            <Text fontSize="sm" fontWeight="700" color="#111827" textTransform="uppercase" letterSpacing="0.08em">
+                              Top Stories
+                            </Text>
+                            <Text fontSize="xs" color="#6b7280">
+                              World, Singapore, Malaysia
+                            </Text>
+                          </HStack>
+
+                          <Grid templateColumns={{ base: '1fr', md: 'repeat(3, minmax(0, 1fr))' }} gap={3}>
+                            {NEWS_SECTIONS.map(({ key, label }) => (
+                              <SectionColumn
+                                key={key}
+                                title={label}
+                                accent={key === 'International' ? '#2563eb' : key === 'Singapore' ? '#c8102e' : '#0f766e'}
+                                emptyLabel="No stories available today."
+                              >
+                                {topicsByRegion[key].map((topic, index) => (
+                                  <DigestStoryCard
+                                    key={`${topic.title}-${index}`}
                                     mode={mode}
                                     titleEn={topic.title}
                                     titleZh={topic.title_zh}
@@ -420,74 +512,53 @@ export default function DigestPreviewDrawer({ isOpen, onClose }: Props) {
                                     bodyZh={topic.summary_zh}
                                     eyebrow={topic.theme}
                                   />
-                                </Box>
-                              ))
-                            ) : (
-                              <Text fontSize="xs" color="#5b6470" py={3}>
-                                No stories available today.
-                              </Text>
-                            )}
-                          </Box>
-                        );
-                      })}
-                    </VStack>
+                                ))}
+                              </SectionColumn>
+                            ))}
+                          </Grid>
+                        </Box>
 
-                    <Divider borderColor="#eceff4" my={2} />
-
-                    <Text
-                      fontSize="2xs"
-                      fontWeight="700"
-                      color="#c8102e"
-                      textTransform="uppercase"
-                      letterSpacing="wider"
-                      mb={2}
-                    >
-                      AI
-                    </Text>
-                    <VStack spacing={0} align="stretch">
-                      {AI_SECTIONS.map(({ key, label }) => {
-                        const items = radarByKey[key];
-                        return (
-                          <Box key={key} pt={1} pb={2}>
-                            <Text
-                              fontSize="2xs"
-                              fontWeight="700"
-                              color="#5b6470"
-                              textTransform="uppercase"
-                              letterSpacing="wider"
-                              mb={1}
-                            >
-                              {label}
+                        <Box>
+                          <HStack justify="space-between" align="baseline" mb={3}>
+                            <Text fontSize="sm" fontWeight="700" color="#111827" textTransform="uppercase" letterSpacing="0.08em">
+                              AI
                             </Text>
-                            {items.length ? (
-                              items.map((item, index) => (
-                                <Box key={`${item.title}-${index}`}>
-                                  {index > 0 && <Divider borderColor="#eceff4" />}
-                                  <DigestItem
+                            <Text fontSize="xs" color="#6b7280">
+                              Governance, Product, Infrastructure
+                            </Text>
+                          </HStack>
+
+                          <Grid templateColumns={{ base: '1fr', md: 'repeat(3, minmax(0, 1fr))' }} gap={3}>
+                            {AI_SECTIONS.map(({ key, label }) => (
+                              <SectionColumn
+                                key={key}
+                                title={label}
+                                accent={key === 'governance' ? '#7c3aed' : key === 'product' ? '#ea580c' : '#0284c7'}
+                                emptyLabel="No AI updates available today."
+                              >
+                                {radarByKey[key].map((item, index) => (
+                                  <DigestStoryCard
+                                    key={`${item.title}-${index}`}
                                     mode={mode}
                                     titleEn={item.title}
                                     titleZh={item.title_zh}
                                     bodyEn={item.description}
                                     bodyZh={item.description_zh}
                                   />
-                                </Box>
-                              ))
-                            ) : (
-                              <Text fontSize="xs" color="#5b6470" py={3}>
-                                No AI updates available today.
-                              </Text>
-                            )}
-                          </Box>
-                        );
-                      })}
-                    </VStack>
-                  </VStack>
+                                ))}
+                              </SectionColumn>
+                            ))}
+                          </Grid>
+                        </Box>
+                      </Stack>
+                    </Box>
+                  </Box>
                 </Box>
               </Box>
-            </VStack>
-          )}
-        </DrawerBody>
-      </DrawerContent>
-    </Drawer>
+            )}
+          </Center>
+        </Grid>
+      </Box>
+    </Box>
   );
 }

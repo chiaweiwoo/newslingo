@@ -12,7 +12,7 @@ import HeadlineCard from './components/HeadlineCard';
 import QuizDrawer from './components/QuizDrawer';
 import SearchBar from './components/SearchBar';
 import StatsDrawer from './components/StatsDrawer';
-import DigestPreviewDrawer from './components/DigestPreviewDrawer';
+import DigestPreviewPage from './components/DigestPreviewDrawer';
 import ThisWeekDrawer from './components/ThisWeekDrawer';
 
 const supabase = createClient(
@@ -56,7 +56,7 @@ function timeAgo(dateStr: string): string {
   return `${days}d ago`;
 }
 
-export default function App() {
+function MainApp() {
   const { colorMode, toggleColorMode }   = useColorMode();
   const { fontSize, increase, decrease } = useFontSize();
   const [activeTab, setActiveTab]        = useState<Category>('International');
@@ -68,7 +68,6 @@ export default function App() {
   const headerRef   = useRef<HTMLDivElement>(null);
   const { isOpen: isAboutOpen,     onOpen: onAboutOpen,     onClose: onAboutClose     } = useDisclosure();
   const { isOpen: isThisWeekOpen,  onOpen: onThisWeekOpen,  onClose: onThisWeekClose  } = useDisclosure();
-  const { isOpen: isDigestOpen,    onOpen: onDigestOpen,    onClose: onDigestClose    } = useDisclosure();
   const { isOpen: isQuizOpen,      onOpen: onQuizOpen,      onClose: onQuizClose      } = useDisclosure();
   const { isOpen: isStatsOpen,     onOpen: onStatsOpen,     onClose: onStatsClose     } = useDisclosure();
 
@@ -172,6 +171,12 @@ export default function App() {
     setSearchOpen(false);
     setSearchQuery('');
     setSearchResults([]);
+  };
+
+  const openDigestPreview = () => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('preview', 'digest');
+    window.open(url.toString(), '_blank', 'noopener,noreferrer');
   };
 
   // Infinite scroll sentinel
@@ -415,7 +420,7 @@ export default function App() {
                       Statistics
                     </MenuItem>
                     <MenuItem
-                      onClick={onDigestOpen}
+                      onClick={openDigestPreview}
                       fontSize="xs"
                       color="brand.ink"
                       bg="brand.card"
@@ -556,9 +561,20 @@ export default function App() {
 
       <AboutDrawer     isOpen={isAboutOpen}    onClose={onAboutClose} />
       <ThisWeekDrawer  isOpen={isThisWeekOpen} onClose={onThisWeekClose} />
-      <DigestPreviewDrawer isOpen={isDigestOpen} onClose={onDigestClose} />
       <QuizDrawer      isOpen={isQuizOpen}     onClose={onQuizClose} />
       <StatsDrawer     isOpen={isStatsOpen}    onClose={onStatsClose} />
     </Box>
   );
+}
+
+export default function App() {
+  const isDigestPreview =
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('preview') === 'digest';
+
+  if (isDigestPreview) {
+    return <DigestPreviewPage />;
+  }
+
+  return <MainApp />;
 }

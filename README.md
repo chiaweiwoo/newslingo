@@ -48,7 +48,7 @@ The translation pipeline self-improves: a quality-assessment step scores each ba
 | AI | DeepSeek V4 Flash (headline + summary translation) · DeepSeek V4 Pro (assessment + rule distillation) · Claude Sonnet 4.6 (Top Stories generation + fact-check) · Claude Haiku 4.5 (AI Radar search + summarisation) |
 | Database | Supabase (Postgres) |
 | Observability | Langfuse Cloud - token counts, cost, latency, translation quality scores |
-| Jobs | GitHub Actions - Feed every 3h, Top Stories daily at 09:00 SGT, AI summary daily at 09:30 SGT, digest email manual-first |
+| Jobs | GitHub Actions - Feed every 3h, Top Stories daily at 03:00 SGT, AI summary daily at 03:30 SGT, digest email manual-first |
 
 ---
 
@@ -70,14 +70,14 @@ flowchart LR
 
     DB[("Supabase")]
 
-    subgraph summary["summary_top_stories.py · daily 09:00 SGT"]
+    subgraph summary["summary_top_stories.py · daily 03:00 SGT"]
         P1["Generate\nClaude Sonnet"]
         P2["Fact-check\nClaude Sonnet"]
         P3["EN->ZH\nDeepSeek Flash"]
         P1 --> P2 --> P3
     end
 
-    subgraph radar["summary_ai.py · daily 09:30 SGT"]
+    subgraph radar["summary_ai.py · daily 03:30 SGT"]
         R1["Search + summarise\nClaude Haiku"]
         R2["Translate to ZH\nDeepSeek Flash"]
         R1 --> R2

@@ -158,7 +158,6 @@ Key constants:
 ### Summary - Top Stories (`summary_top_stories.py`)
 
 - loads recent headlines from Supabase
-- skips when fewer than `MIN_NEW_HEADLINES = 30` new translated headlines arrived
 - pass 1 uses `claude-sonnet-4-6` to generate `8-10` must-know topics
 - pass 2 uses `claude-sonnet-4-6` to fact-check and tense-correct against the same headline block
 - pass 3 uses `deepseek-v4-flash` for EN->ZH translation

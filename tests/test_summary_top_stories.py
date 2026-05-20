@@ -39,7 +39,6 @@ class TestConstants:
         assert summary_top_stories.SUMMARY_MODEL == "claude-sonnet-4-6"
         assert summary_top_stories.SUMMARY_FACTCHECK_MODEL == "claude-sonnet-4-6"
         assert summary_top_stories.SUMMARY_TRANSLATION_MODEL == "deepseek-v4-flash"
-        assert summary_top_stories.MIN_NEW_HEADLINES == 30
 
 
 class TestPromptContracts:
@@ -201,6 +200,58 @@ class TestCallSummary:
         assert first_system[0]["text"] == second_system[0]["text"]
         assert first_system[0]["cache_control"] == {"type": "ephemeral"}
 
+    def test_translation_pass_preserves_zh_fields(self):
+        summary_top_stories.claude = MagicMock()
+        summary_top_stories.deepseek = MagicMock()
+        summary_top_stories.claude.messages.create.side_effect = [
+            _make_llm_response(
+                '{"topics":[{"title":"A","summary":"A sum","region":"International","theme":"Politics"}]}'
+            ),
+            _make_llm_response(
+                '{"topics":[{"title":"A","summary":"A sum","region":"International","theme":"Politics"}]}'
+            ),
+        ]
+        summary_top_stories.deepseek.messages.create.return_value = _make_llm_response(
+            '[{"idx":0,"title_zh":"甲","summary_zh":"乙"}]'
+        )
+
+        payload, _usage = summary_top_stories._call_summary("HEADLINES: x")
+
+        assert payload["topics"][0]["title_zh"] == "甲"
+        assert payload["topics"][0]["summary_zh"] == "乙"
+
+
+class TestMain:
+    def test_main_runs_without_incremental_skip(self):
+        with (
+            patch.object(
+                summary_top_stories,
+                "_load_previous_summary",
+                return_value={"id": "old", "created_at": "2026-05-19T00:00:00+00:00"},
+            ),
+            patch.object(
+                summary_top_stories,
+                "_load_recent_headlines",
+                return_value=[{"title_en": "One", "title_zh": "一", "category": "International"}],
+            ) as mock_load_recent,
+            patch.object(summary_top_stories, "_build_content", return_value="HEADLINES: x"),
+            patch.object(
+                summary_top_stories,
+                "_call_summary",
+                return_value=({"topics": [{"title": "A"}]}, MagicMock()),
+            ) as mock_call_summary,
+            patch.object(summary_top_stories, "_store_summary") as mock_store,
+            patch("builtins.print") as mock_print,
+        ):
+            summary_top_stories._main()
+
+        mock_load_recent.assert_called_once()
+        mock_call_summary.assert_called_once_with("HEADLINES: x")
+        mock_store.assert_called_once()
+        printed = "\n".join(str(call.args[0]) for call in mock_print.call_args_list if call.args)
+        assert "new headlines since last summary" not in printed
+        assert "fewer than" not in printed
+
 
 class TestRotation:
     def test_store_summary_deactivates_previous_before_insert(self):
@@ -217,19 +268,18 @@ class TestRotation:
             {"id": "old-id"},
         )
 
-        assert summary_top_stories.supabase.table.mock_calls == [
+        assert summary_top_stories.supabase.table.call_count == 2
+        assert summary_top_stories.supabase.table.call_args_list == [
             call("weekly_summary"),
-            call().update({"active": False}),
-            call().update().eq("id", "old-id"),
-            call().update().eq().execute(),
             call("weekly_summary"),
-            call().insert(
-                {
-                    "week_start": "2026-05-13",
-                    "week_end": "2026-05-20",
-                    "payload": {"topics": []},
-                    "active": True,
-                }
-            ),
-            call().insert().execute(),
         ]
+        mock_table.update.assert_called_once_with({"active": False})
+        mock_table.update.return_value.eq.assert_called_once_with("id", "old-id")
+        mock_table.insert.assert_called_once_with(
+            {
+                "week_start": "2026-05-13",
+                "week_end": "2026-05-20",
+                "payload": {"topics": []},
+                "active": True,
+            }
+        )

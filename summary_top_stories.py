@@ -47,7 +47,6 @@ SUMMARY_MODEL = "claude-sonnet-4-6"
 SUMMARY_FACTCHECK_MODEL = "claude-sonnet-4-6"
 SUMMARY_TRANSLATION_MODEL = "deepseek-v4-flash"
 LOOKBACK_DAYS = 7
-MIN_NEW_HEADLINES = 30
 SUMMARY_MAX_TOKENS = 6000
 SUMMARY_TRANSLATION_MAX_TOKENS = 2200
 THINKING_DISABLED = {"type": "disabled"}
@@ -236,17 +235,6 @@ def _load_recent_headlines(since_iso: str) -> list[dict]:
     return result.data or []
 
 
-def _count_new_headlines(since_iso: str) -> int:
-    result = (
-        supabase.table("headlines")
-        .select("id", count="exact", head=True)
-        .gte("published_at", since_iso)
-        .not_.is_("title_en", "null")
-        .execute()
-    )
-    return result.count or 0
-
-
 def _build_content(headlines: list[dict]) -> str:
     by_region: dict[str, list[dict]] = {
         "International": [],
@@ -376,13 +364,6 @@ def _main() -> None:
         now = datetime.now(timezone.utc)
         since_iso = (now - timedelta(days=LOOKBACK_DAYS)).isoformat()
         previous = _load_previous_summary()
-
-        if previous:
-            new_count = _count_new_headlines(previous["created_at"])
-            print(f"[summary] {new_count} new headlines since last summary", flush=True)
-            if new_count < MIN_NEW_HEADLINES:
-                print(f"[summary] fewer than {MIN_NEW_HEADLINES} new headlines - skipping", flush=True)
-                return
 
         headlines = _load_recent_headlines(since_iso)
         print(f"[summary] {len(headlines)} headlines in past {LOOKBACK_DAYS} days", flush=True)

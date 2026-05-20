@@ -13,7 +13,6 @@ import QuizDrawer from './components/QuizDrawer';
 import SearchBar from './components/SearchBar';
 import StatsDrawer from './components/StatsDrawer';
 import DigestPreviewPage from './components/DigestPreviewDrawer';
-import HeaderBrandMark from './components/HeaderBrandMark';
 import ThisWeekDrawer from './components/ThisWeekDrawer';
 
 const supabase = createClient(
@@ -221,19 +220,13 @@ function MainApp() {
             />
           ) : (
           <Flex align="center" justify="space-between" pt={3} pb={2}>
-            <HStack spacing={2.5} align="center">
-              <HeaderBrandMark
-                boxSize="30px"
-                flexShrink={0}
-              />
-              <Heading
-                size="md" color="white" fontWeight="700"
-                letterSpacing="-0.3px"
-                fontFamily="'Noto Serif SC', 'Georgia', serif"
-              >
-                NewsLingo
-              </Heading>
-            </HStack>
+            <Heading
+              size="md" color="white" fontWeight="700"
+              letterSpacing="-0.3px"
+              fontFamily="'Noto Serif SC', 'Georgia', serif"
+            >
+              NewsLingo
+            </Heading>
             <HStack spacing={3} align="center">
               {/* Search icon */}
               <Box

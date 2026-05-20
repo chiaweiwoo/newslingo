@@ -1,9 +1,0 @@
-<svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
-  <title id="title">Newslingo compass icon</title>
-  <desc id="desc">A compact compass mark for the Newslingo header.</desc>
-  <circle cx="20" cy="20" r="11.75" stroke="#7CEBDD" stroke-width="3"/>
-  <path d="M20 8.75V11.4" stroke="#7CEBDD" stroke-width="2.2" stroke-linecap="round"/>
-  <path d="M24.7 14.8L21.2 22.7C21 23.2 20.4 23.4 20 23.1L16.9 20C16.6 19.6 16.8 19 17.3 18.8L25.2 15.3C25.9 15 25.9 14.9 24.7 14.8Z" fill="#0F766E"/>
-  <path d="M15.3 25.2L18.8 17.3C19 16.8 19.6 16.6 20 16.9L23.1 20C23.4 20.4 23.2 21 22.7 21.2L14.8 24.7C14.1 25 14.1 25.1 15.3 25.2Z" fill="#7CEBDD"/>
-  <circle cx="20" cy="20" r="2.25" fill="#F8FAFC"/>
-</svg>

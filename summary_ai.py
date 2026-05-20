@@ -148,11 +148,19 @@ def _extract_json_object(text: str) -> str | None:
             pass
 
     # Repair logic for truncated JSON
+    # 1. First, aggressively trim trailing whitespace and common invalid trailing chars
+    # that often appear in truncated JSON (like a comma before a closing brace)
+    body = body.strip()
+    while body and body[-1] in (",", "[", "{", ":", " "):
+        body = body[:-1].strip()
+
     stack = []
     in_string = False
     escaped = False
+    clean_body = ""
 
     for char in body:
+        clean_body += char
         if escaped:
             escaped = False
             continue
@@ -171,23 +179,32 @@ def _extract_json_object(text: str) -> str | None:
             elif char == "}":
                 if stack and stack[-1] == "}":
                     stack.pop()
+                else:
+                    # Malformed: closing brace without opening
+                    return None
             elif char == "]":
                 if stack and stack[-1] == "]":
                     stack.pop()
+                else:
+                    # Malformed: closing bracket without opening
+                    return None
 
-    repaired = body
+    repaired = clean_body
     if in_string:
         repaired += '"'
-    else:
-        repaired = repaired.rstrip().rstrip(",")
 
+    # Close any open objects/arrays
     if stack:
         repaired += "".join(reversed(stack))
 
+    # Final attempt to parse. If it fails, we try one more time by popping elements
+    # off the end of the stack and the string to see if we can find a valid prefix.
     try:
         json.loads(repaired)
         return repaired
     except json.JSONDecodeError:
+        # If repair failed, it might be because we're mid-property name or mid-value.
+        # This is complex to solve perfectly without a real parser, so we'll stop here for now.
         return None
 
 

@@ -103,6 +103,10 @@ class TestCallSummary:
         text = 'Here:\n{"topics": [{"title": "A"}]}\nDone.'
         assert summary_top_stories._extract_json_object(text) == '{"topics": [{"title": "A"}]}'
 
+    def test_parse_items_accepts_top_level_array(self):
+        items = summary_top_stories._parse_items('[{"title": "A", "summary": "B"}]', "discover")
+        assert items == [{"title": "A", "summary": "B"}]
+
     def test_sanitize_topic_rejects_invalid_region(self):
         assert summary_top_stories._sanitize_topic(
             {"title": "A", "summary": "B", "region": "Bad", "theme": "Politics"}

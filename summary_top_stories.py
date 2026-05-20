@@ -454,6 +454,15 @@ def _parse_items(body: str, label: str) -> list[dict]:
         except json.JSONDecodeError:
             pass
 
+    extracted_array = _extract_json_array(body)
+    if extracted_array:
+        try:
+            parsed = json.loads(extracted_array)
+            if isinstance(parsed, list):
+                return parsed
+        except json.JSONDecodeError:
+            pass
+
     # Fallback to DeepSeek repair
     print(f"  [summary] {label}: manual repair failed, attempting DeepSeek repair...", flush=True)
     repaired = _repair_json_with_deepseek(body)

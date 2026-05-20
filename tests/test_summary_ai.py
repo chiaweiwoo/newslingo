@@ -73,6 +73,10 @@ class TestJsonParsing:
         payload = summary_ai._parse_items_payload('{"items": []}')
         assert payload == {"items": []}
 
+    def test_parse_items_payload_accepts_top_level_array(self):
+        payload = summary_ai._parse_items_payload('[{"title": "A", "description": "B"}]')
+        assert payload == {"items": [{"title": "A", "description": "B"}]}
+
     def test_normalize_items_filters_bad_rows(self):
         items = summary_ai._normalize_items(
             {

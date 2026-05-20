@@ -94,7 +94,7 @@ flowchart LR
 
 **Aggregation (`feed_ingest.py`):** scrapes Zaobao sitemaps and the Astro YouTube uploads playlist, translates headlines with DeepSeek Flash, scores each translation 1-5 with DeepSeek Pro, then distils failures into rules that improve the next run.
 
-**Top Stories (`summary_top_stories.py`):** Gemini 2.5 Flash-Lite discovers important stories from the open web across International, Singapore, and Malaysia, Gemini 2.5 Flash selects the final set, and DeepSeek Flash translates the final topics into Simplified Chinese.
+**Top Stories (`summary_top_stories.py`):** Gemini 2.5 Flash-Lite discovers important stories from the open web across International, Singapore, and Malaysia, Gemini 3.5 Flash selects the final set, and DeepSeek Flash translates the final topics into Simplified Chinese.
 
 **AI Radar (`summary_ai.py`):** daily AI-specific search-and-summarise job across governance, product, and infrastructure. Gemini 2.5 Flash-Lite handles grounded discovery, then DeepSeek Flash adds Simplified Chinese fields for the shared drawer.
 

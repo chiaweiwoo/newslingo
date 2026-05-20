@@ -31,7 +31,7 @@ class TestConstants:
 
     def test_models_routed_to_gemini_and_deepseek(self):
         assert summary_top_stories.SUMMARY_DISCOVERY_MODEL == "gemini-2.5-flash-lite"
-        assert summary_top_stories.SUMMARY_MODEL == "gemini-2.5-flash"
+        assert summary_top_stories.SUMMARY_MODEL == "gemini-3.5-flash"
         assert summary_top_stories.SUMMARY_TRANSLATION_MODEL == "deepseek-v4-flash"
 
 

@@ -10,7 +10,7 @@ const supabase = createClient(
 
 type Region = 'International' | 'Malaysia' | 'Singapore';
 type RadarKey = 'governance' | 'product' | 'infrastructure';
-type DigestLang = 'en' | 'zh' | 'bi';
+type DigestLang = 'en' | 'zh';
 type FrameMode = 'desktop' | 'mobile';
 
 interface Topic {
@@ -71,10 +71,8 @@ function formatDigestDate(summaryDate?: string, radarDate?: string): string | nu
   }).format(date);
 }
 
-function formatRender(mode: DigestLang, en?: string, zh?: string) {
-  if (mode === 'zh') return zh || en || '';
-  if (mode === 'en') return en || zh || '';
-  return { en: en || '', zh: zh || '' };
+function pickText(mode: DigestLang, en?: string, zh?: string) {
+  return mode === 'zh' ? zh || en || '' : en || zh || '';
 }
 
 function ToggleButton({
@@ -94,161 +92,18 @@ function ToggleButton({
       py={1.5}
       borderRadius="999px"
       border="1px solid"
-      borderColor={active ? '#111827' : '#d4dbe6'}
-      bg={active ? '#111827' : '#ffffff'}
+      borderColor={active ? 'brand.red' : '#d4dbe6'}
+      bg={active ? 'brand.red' : '#ffffff'}
       color={active ? '#ffffff' : '#5b6470'}
       fontSize="11px"
       fontWeight="700"
       letterSpacing="0.08em"
       lineHeight="1.4"
       transition="all 0.15s"
-      _hover={{ color: active ? '#ffffff' : '#111827', borderColor: '#b8c0cc' }}
+      _hover={{ color: active ? '#ffffff' : '#111827', borderColor: active ? 'brand.red' : '#b8c0cc' }}
       whiteSpace="nowrap"
     >
       {label}
-    </Box>
-  );
-}
-
-function EmailLine({
-  value,
-  mode,
-  isTitle = false,
-}: {
-  value: ReturnType<typeof formatRender>;
-  mode: DigestLang;
-  isTitle?: boolean;
-}) {
-  const baseProps = isTitle
-    ? {
-        fontSize: 'sm',
-        fontWeight: '700',
-        color: '#111827',
-        lineHeight: '1.45',
-        fontFamily: "'Noto Serif SC', 'Georgia', serif",
-      }
-    : {
-        fontSize: 'xs',
-        color: '#46505c',
-        lineHeight: '1.75',
-      };
-
-  if (mode === 'bi' && typeof value !== 'string') {
-    return (
-      <VStack spacing={0.5} align="stretch">
-        <Text {...baseProps}>{value.en}</Text>
-        <Text {...baseProps} color={isTitle ? '#9f1239' : '#111827'}>
-          {value.zh}
-        </Text>
-      </VStack>
-    );
-  }
-
-  return <Text {...baseProps}>{typeof value === 'string' ? value : value.en || value.zh}</Text>;
-}
-
-function DigestStoryCard({
-  mode,
-  titleEn,
-  titleZh,
-  bodyEn,
-  bodyZh,
-  eyebrow,
-}: {
-  mode: DigestLang;
-  titleEn: string;
-  titleZh?: string;
-  bodyEn: string;
-  bodyZh?: string;
-  eyebrow?: string;
-}) {
-  return (
-    <Box
-      bg="#ffffff"
-      border="1px solid"
-      borderColor="#e5e9f0"
-      borderRadius="16px"
-      px={3.5}
-      py={3.5}
-      boxShadow="0 10px 30px rgba(15, 23, 42, 0.05)"
-    >
-      {eyebrow ? (
-        <Badge
-          bg="#f3f4f6"
-          color="#5b6470"
-          borderRadius="999px"
-          px={2}
-          py={0.5}
-          fontSize="10px"
-          fontWeight="700"
-          letterSpacing="0.08em"
-          textTransform="uppercase"
-          mb={2}
-        >
-          {eyebrow}
-        </Badge>
-      ) : null}
-      <EmailLine value={formatRender(mode, titleEn, titleZh)} mode={mode} isTitle />
-      <Box mt={2}>
-        <EmailLine value={formatRender(mode, bodyEn, bodyZh)} mode={mode} />
-      </Box>
-    </Box>
-  );
-}
-
-function SectionColumn({
-  title,
-  accent,
-  emptyLabel,
-  children,
-}: {
-  title: string;
-  accent: string;
-  emptyLabel: string;
-  children: React.ReactNode;
-}) {
-  const childCount = React.Children.count(children);
-
-  return (
-    <Box
-      bg="#f8fafc"
-      border="1px solid"
-      borderColor="#e2e8f0"
-      borderRadius="20px"
-      px={3.5}
-      py={3.5}
-    >
-      <HStack justify="space-between" align="center" mb={3}>
-        <Text
-          fontSize="11px"
-          fontWeight="700"
-          color="#475569"
-          textTransform="uppercase"
-          letterSpacing="0.1em"
-        >
-          {title}
-        </Text>
-        <Box w="10px" h="10px" borderRadius="full" bg={accent} />
-      </HStack>
-
-      {childCount ? (
-        <VStack spacing={3} align="stretch">
-          {children}
-        </VStack>
-      ) : (
-        <Box
-          border="1px dashed"
-          borderColor="#d4dbe6"
-          borderRadius="14px"
-          px={3}
-          py={4}
-          bg="#ffffff"
-        >
-          <Text fontSize="xs" color="#6b7280" lineHeight="1.7">
-            {emptyLabel}
-          </Text>
-        </Box>
-      )}
     </Box>
   );
 }
@@ -283,8 +138,100 @@ function ChromeDot({ color }: { color: string }) {
   return <Box w="10px" h="10px" borderRadius="full" bg={color} />;
 }
 
+function StoryItem({
+  title,
+  body,
+  eyebrow,
+}: {
+  title: string;
+  body: string;
+  eyebrow?: string;
+}) {
+  return (
+    <Box py={3}>
+      {eyebrow ? (
+        <Text
+          fontSize="10px"
+          fontWeight="700"
+          color="brand.red"
+          textTransform="uppercase"
+          letterSpacing="0.08em"
+          mb={1.5}
+        >
+          {eyebrow}
+        </Text>
+      ) : null}
+      <Text
+        fontSize="sm"
+        fontWeight="700"
+        color="#111827"
+        lineHeight="1.45"
+        fontFamily="'Noto Serif SC', 'Georgia', serif"
+      >
+        {title}
+      </Text>
+      <Text fontSize="xs" color="#46505c" lineHeight="1.75" mt={1.5}>
+        {body}
+      </Text>
+    </Box>
+  );
+}
+
+function Subsection({
+  label,
+  children,
+  emptyLabel,
+}: {
+  label: string;
+  children: React.ReactNode;
+  emptyLabel: string;
+}) {
+  const count = React.Children.count(children);
+
+  return (
+    <Box>
+      <Text
+        fontSize="11px"
+        fontWeight="700"
+        color="#6b7280"
+        textTransform="uppercase"
+        letterSpacing="0.1em"
+        mb={2}
+      >
+        {label}
+      </Text>
+      {count ? (
+        <Box
+          bg="#ffffff"
+          border="1px solid"
+          borderColor="#e4e7ec"
+          borderRadius="18px"
+          overflow="hidden"
+        >
+          <VStack spacing={0} align="stretch">
+            {children}
+          </VStack>
+        </Box>
+      ) : (
+        <Box
+          border="1px dashed"
+          borderColor="#d9dde5"
+          borderRadius="14px"
+          px={3}
+          py={4}
+          bg="#ffffff"
+        >
+          <Text fontSize="xs" color="#6b7280" lineHeight="1.7">
+            {emptyLabel}
+          </Text>
+        </Box>
+      )}
+    </Box>
+  );
+}
+
 export default function DigestPreviewPage() {
-  const [mode, setMode] = useState<DigestLang>('bi');
+  const [mode, setMode] = useState<DigestLang>('en');
   const [frameMode, setFrameMode] = useState<FrameMode>('desktop');
 
   const { data, isLoading } = useQuery({
@@ -340,7 +287,12 @@ export default function DigestPreviewPage() {
   const digestDate = formatDigestDate(data?.summary?.created_at, data?.radar?.created_at);
   const totalAiItems = categories.reduce((sum, category) => sum + (category.items?.length ?? 0), 0);
   const desktopEmailWidth = '640px';
-  const mobileEmailWidth = '100%';
+
+  const heroTitle = mode === 'zh' ? 'NewsLingo 每日简报' : 'NewsLingo Daily Brief';
+  const heroSubtitle =
+    mode === 'zh'
+      ? '过去七天最重要的综合新闻与 AI 动向，一封看完。'
+      : 'A compact scan of the most important general and AI developments from the past 7 days.';
 
   return (
     <Box
@@ -372,7 +324,7 @@ export default function DigestPreviewPage() {
                 Email Preview
               </Text>
               <Text fontSize="xs" color="#5b6470" lineHeight="1.7" mt={1.5}>
-                A more realistic Gmail-style reading view with a narrower message column and separate language samples.
+                One language per email. NewsLingo-style sections and subsections inside a more realistic Gmail reading pane.
               </Text>
             </Box>
 
@@ -380,7 +332,6 @@ export default function DigestPreviewPage() {
               <ControlGroup label="Language">
                 <ToggleButton active={mode === 'en'} label="EN" onClick={() => setMode('en')} />
                 <ToggleButton active={mode === 'zh'} label="中" onClick={() => setMode('zh')} />
-                <ToggleButton active={mode === 'bi'} label="EN + 中" onClick={() => setMode('bi')} />
               </ControlGroup>
 
               <ControlGroup label="Viewport">
@@ -394,7 +345,7 @@ export default function DigestPreviewPage() {
         <Center alignItems="flex-start">
           {isLoading ? (
             <Center py={20}>
-              <Spinner color="#c8102e" size="lg" />
+              <Spinner color="brand.red" size="lg" />
             </Center>
           ) : frameMode === 'desktop' ? (
             <Box
@@ -473,7 +424,7 @@ export default function DigestPreviewPage() {
                               lineHeight="1.1"
                               fontFamily="'Noto Serif SC', 'Georgia', serif"
                             >
-                              NewsLingo Daily Brief
+                              {heroTitle}
                             </Text>
                             <HStack spacing={2} mt={2} flexWrap="wrap">
                               <Text fontSize="sm" color="#5b6470">digest@newslingo.daily</Text>
@@ -492,43 +443,23 @@ export default function DigestPreviewPage() {
                         <Center>
                           <Box w="100%" maxW={desktopEmailWidth}>
                             <Box
-                              borderRadius="28px"
+                              borderRadius="24px"
                               px={{ base: 4, md: 5 }}
                               py={{ base: 4, md: 5 }}
-                              bg="linear-gradient(135deg, #0f172a 0%, #162033 52%, #1f2a44 100%)"
+                              bg="linear-gradient(180deg, #141414 0%, #1f1f1f 100%)"
                               color="#ffffff"
                             >
-                              <HStack justify="space-between" align="flex-start" spacing={4}>
-                                <Box minW={0}>
-                                  <Text
-                                    fontSize={{ base: '2xl', md: '3xl' }}
-                                    fontWeight="700"
-                                    lineHeight="1.05"
-                                    fontFamily="'Noto Serif SC', 'Georgia', serif"
-                                  >
-                                    NewsLingo Daily Brief
-                                  </Text>
-                                  <Text fontSize="sm" color="rgba(255,255,255,0.76)" mt={2} maxW="520px" lineHeight="1.7">
-                                    A compact bilingual scan of the most important general and AI developments from the past 7 days.
-                                  </Text>
-                                </Box>
-                                <Badge
-                                  alignSelf="flex-start"
-                                  bg="rgba(255,255,255,0.12)"
-                                  color="#f8fafc"
-                                  borderRadius="999px"
-                                  px={3}
-                                  py={1.5}
-                                  fontSize="10px"
-                                  fontWeight="700"
-                                  letterSpacing="0.08em"
-                                  textTransform="uppercase"
-                                  whiteSpace="nowrap"
-                                >
-                                  {digestDate || 'Latest'}
-                                </Badge>
-                              </HStack>
-
+                              <Text
+                                fontSize={{ base: '2xl', md: '3xl' }}
+                                fontWeight="700"
+                                lineHeight="1.05"
+                                fontFamily="'Noto Serif SC', 'Georgia', serif"
+                              >
+                                {heroTitle}
+                              </Text>
+                              <Text fontSize="sm" color="rgba(255,255,255,0.76)" mt={2} lineHeight="1.7">
+                                {heroSubtitle}
+                              </Text>
                               <HStack spacing={2} mt={4} flexWrap="wrap">
                                 <Badge bg="#ffffff" color="#111827" borderRadius="999px" px={2.5} py={1} fontSize="10px">
                                   {topics.length} Top Stories
@@ -550,28 +481,22 @@ export default function DigestPreviewPage() {
                                   </Text>
                                 </HStack>
 
-                                <Grid templateColumns={{ base: '1fr', md: 'repeat(2, minmax(0, 1fr))' }} gap={3}>
+                                <Stack spacing={4}>
                                   {NEWS_SECTIONS.map(({ key, label }) => (
-                                    <SectionColumn
-                                      key={key}
-                                      title={label}
-                                      accent={key === 'International' ? '#2563eb' : key === 'Singapore' ? '#c8102e' : '#0f766e'}
-                                      emptyLabel="No stories available today."
-                                    >
+                                    <Subsection key={key} label={label} emptyLabel="No stories available today.">
                                       {topicsByRegion[key].map((topic, index) => (
-                                        <DigestStoryCard
-                                          key={`${topic.title}-${index}`}
-                                          mode={mode}
-                                          titleEn={topic.title}
-                                          titleZh={topic.title_zh}
-                                          bodyEn={topic.summary}
-                                          bodyZh={topic.summary_zh}
-                                          eyebrow={topic.theme}
-                                        />
+                                        <Box key={`${topic.title}-${index}`} px={3.5}>
+                                          {index > 0 && <Divider borderColor="#eceff4" />}
+                                          <StoryItem
+                                            title={pickText(mode, topic.title, topic.title_zh)}
+                                            body={pickText(mode, topic.summary, topic.summary_zh)}
+                                            eyebrow={topic.theme}
+                                          />
+                                        </Box>
                                       ))}
-                                    </SectionColumn>
+                                    </Subsection>
                                   ))}
-                                </Grid>
+                                </Stack>
                               </Box>
 
                               <Box>
@@ -584,27 +509,21 @@ export default function DigestPreviewPage() {
                                   </Text>
                                 </HStack>
 
-                                <Grid templateColumns={{ base: '1fr', md: 'repeat(2, minmax(0, 1fr))' }} gap={3}>
+                                <Stack spacing={4}>
                                   {AI_SECTIONS.map(({ key, label }) => (
-                                    <SectionColumn
-                                      key={key}
-                                      title={label}
-                                      accent={key === 'governance' ? '#7c3aed' : key === 'product' ? '#ea580c' : '#0284c7'}
-                                      emptyLabel="No AI updates available today."
-                                    >
+                                    <Subsection key={key} label={label} emptyLabel="No AI updates available today.">
                                       {radarByKey[key].map((item, index) => (
-                                        <DigestStoryCard
-                                          key={`${item.title}-${index}`}
-                                          mode={mode}
-                                          titleEn={item.title}
-                                          titleZh={item.title_zh}
-                                          bodyEn={item.description}
-                                          bodyZh={item.description_zh}
-                                        />
+                                        <Box key={`${item.title}-${index}`} px={3.5}>
+                                          {index > 0 && <Divider borderColor="#eceff4" />}
+                                          <StoryItem
+                                            title={pickText(mode, item.title, item.title_zh)}
+                                            body={pickText(mode, item.description, item.description_zh)}
+                                          />
+                                        </Box>
                                       ))}
-                                    </SectionColumn>
+                                    </Subsection>
                                   ))}
-                                </Grid>
+                                </Stack>
                               </Box>
                             </Stack>
                           </Box>
@@ -642,7 +561,7 @@ export default function DigestPreviewPage() {
                   <Box bg="#ffffff" borderRadius="22px" border="1px solid" borderColor="#e5e9f0" overflow="hidden">
                     <Box px={4} py={3.5} borderBottom="1px solid" borderColor="#edf1f5">
                       <Text fontSize="xl" fontWeight="700" color="#111827" lineHeight="1.2" fontFamily="'Noto Serif SC', 'Georgia', serif">
-                        NewsLingo Daily Brief
+                        {heroTitle}
                       </Text>
                       <Text fontSize="xs" color="#6b7280" mt={1}>
                         {digestDate || 'Latest available summary'}
@@ -650,54 +569,51 @@ export default function DigestPreviewPage() {
                     </Box>
 
                     <Box px={4} py={4} bg="#f9fbfd">
-                      <Box w={mobileEmailWidth}>
-                        <Box
-                          borderRadius="22px"
-                          px={4}
-                          py={4}
-                          bg="linear-gradient(135deg, #0f172a 0%, #162033 52%, #1f2a44 100%)"
-                          color="#ffffff"
-                        >
-                          <Text fontSize="2xl" fontWeight="700" lineHeight="1.08" fontFamily="'Noto Serif SC', 'Georgia', serif">
-                            NewsLingo Daily Brief
-                          </Text>
-                          <Text fontSize="xs" color="rgba(255,255,255,0.78)" mt={2} lineHeight="1.7">
-                            A compact bilingual scan of the most important general and AI developments from the past 7 days.
-                          </Text>
-                        </Box>
-
-                        <Stack spacing={4} mt={4}>
-                          <SectionColumn title="Top Stories" accent="#c8102e" emptyLabel="No stories available today.">
-                            {topics.map((topic, index) => (
-                              <DigestStoryCard
-                                key={`${topic.title}-${index}`}
-                                mode={mode}
-                                titleEn={topic.title}
-                                titleZh={topic.title_zh}
-                                bodyEn={topic.summary}
-                                bodyZh={topic.summary_zh}
-                                eyebrow={`${topic.region} · ${topic.theme}`}
-                              />
-                            ))}
-                          </SectionColumn>
-
-                          <SectionColumn title="AI" accent="#7c3aed" emptyLabel="No AI updates available today.">
-                            {categories.flatMap((category) =>
-                              category.items.map((item, index) => (
-                                <DigestStoryCard
-                                  key={`${category.key}-${item.title}-${index}`}
-                                  mode={mode}
-                                  titleEn={item.title}
-                                  titleZh={item.title_zh}
-                                  bodyEn={item.description}
-                                  bodyZh={item.description_zh}
-                                  eyebrow={category.title}
-                                />
-                              ))
-                            )}
-                          </SectionColumn>
-                        </Stack>
+                      <Box
+                        borderRadius="22px"
+                        px={4}
+                        py={4}
+                        bg="linear-gradient(180deg, #141414 0%, #1f1f1f 100%)"
+                        color="#ffffff"
+                      >
+                        <Text fontSize="2xl" fontWeight="700" lineHeight="1.08" fontFamily="'Noto Serif SC', 'Georgia', serif">
+                          {heroTitle}
+                        </Text>
+                        <Text fontSize="xs" color="rgba(255,255,255,0.78)" mt={2} lineHeight="1.7">
+                          {heroSubtitle}
+                        </Text>
                       </Box>
+
+                      <Stack spacing={4} mt={4}>
+                        {NEWS_SECTIONS.map(({ key, label }) => (
+                          <Subsection key={key} label={label} emptyLabel="No stories available today.">
+                            {topicsByRegion[key].map((topic, index) => (
+                              <Box key={`${topic.title}-${index}`} px={3.5}>
+                                {index > 0 && <Divider borderColor="#eceff4" />}
+                                <StoryItem
+                                  title={pickText(mode, topic.title, topic.title_zh)}
+                                  body={pickText(mode, topic.summary, topic.summary_zh)}
+                                  eyebrow={topic.theme}
+                                />
+                              </Box>
+                            ))}
+                          </Subsection>
+                        ))}
+
+                        {AI_SECTIONS.map(({ key, label }) => (
+                          <Subsection key={key} label={label} emptyLabel="No AI updates available today.">
+                            {radarByKey[key].map((item, index) => (
+                              <Box key={`${item.title}-${index}`} px={3.5}>
+                                {index > 0 && <Divider borderColor="#eceff4" />}
+                                <StoryItem
+                                  title={pickText(mode, item.title, item.title_zh)}
+                                  body={pickText(mode, item.description, item.description_zh)}
+                                />
+                              </Box>
+                            ))}
+                          </Subsection>
+                        ))}
+                      </Stack>
                     </Box>
                   </Box>
                 </Box>

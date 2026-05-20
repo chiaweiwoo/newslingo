@@ -147,65 +147,58 @@ def _extract_json_object(text: str) -> str | None:
         except json.JSONDecodeError:
             pass
 
-    # Repair logic for truncated JSON
-    # 1. First, aggressively trim trailing whitespace and common invalid trailing chars
-    # that often appear in truncated JSON (like a comma before a closing brace)
-    body = body.strip()
-    while body and body[-1] in (",", "[", "{", ":", " "):
-        body = body[:-1].strip()
-
-    stack = []
-    in_string = False
-    escaped = False
-    clean_body = ""
-
-    for char in body:
-        clean_body += char
-        if escaped:
-            escaped = False
+    # Repair logic for truncated JSON:
+    # We try to find the longest valid prefix by iteratively shortening the string
+    # and attempting to close the braces/brackets.
+    for i in range(len(body), 0, -1):
+        candidate_body = body[:i]
+        
+        # Quick check: if we're in the middle of a string, close it
+        # (This is a heuristic, but good enough for news summaries)
+        stack = []
+        in_string = False
+        escaped = False
+        for char in candidate_body:
+            if escaped:
+                escaped = False
+                continue
+            if char == "\\":
+                escaped = True
+                continue
+            if char == '"':
+                in_string = not in_string
+                continue
+            if not in_string:
+                if char == "{":
+                    stack.append("}")
+                elif char == "[":
+                    stack.append("]")
+                elif char == "}":
+                    if stack and stack[-1] == "}":
+                        stack.pop()
+                elif char == "]":
+                    if stack and stack[-1] == "]":
+                        stack.pop()
+        
+        repaired = candidate_body
+        if in_string:
+            repaired += '"'
+        
+        # Basic cleanup: remove trailing commas or incomplete tokens before closing
+        repaired = repaired.strip()
+        while repaired and repaired[-1] in (",", "[", "{", ":", " "):
+            repaired = repaired[:-1].strip()
+            
+        if stack:
+            repaired += "".join(reversed(stack))
+            
+        try:
+            json.loads(repaired)
+            return repaired
+        except json.JSONDecodeError:
             continue
-        if char == "\\":
-            escaped = True
-            continue
-        if char == '"':
-            in_string = not in_string
-            continue
-
-        if not in_string:
-            if char == "{":
-                stack.append("}")
-            elif char == "[":
-                stack.append("]")
-            elif char == "}":
-                if stack and stack[-1] == "}":
-                    stack.pop()
-                else:
-                    # Malformed: closing brace without opening
-                    return None
-            elif char == "]":
-                if stack and stack[-1] == "]":
-                    stack.pop()
-                else:
-                    # Malformed: closing bracket without opening
-                    return None
-
-    repaired = clean_body
-    if in_string:
-        repaired += '"'
-
-    # Close any open objects/arrays
-    if stack:
-        repaired += "".join(reversed(stack))
-
-    # Final attempt to parse. If it fails, we try one more time by popping elements
-    # off the end of the stack and the string to see if we can find a valid prefix.
-    try:
-        json.loads(repaired)
-        return repaired
-    except json.JSONDecodeError:
-        # If repair failed, it might be because we're mid-property name or mid-value.
-        # This is complex to solve perfectly without a real parser, so we'll stop here for now.
-        return None
+            
+    return None
 
 
 def _extract_json_array(text: str) -> str | None:

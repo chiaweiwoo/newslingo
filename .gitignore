@@ -21,3 +21,4 @@ Thumbs.db
 
 # Temporary query/debug scripts — never commit
 _tmp_*.py
+digest_preview/

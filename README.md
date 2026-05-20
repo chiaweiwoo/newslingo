@@ -48,7 +48,7 @@ The translation pipeline self-improves: a quality-assessment step scores each ba
 | AI | DeepSeek V4 Flash (headline + summary translation) · DeepSeek V4 Pro (assessment + rule distillation) · Claude Sonnet 4.6 (Top Stories generation + fact-check) · Claude Haiku 4.5 (AI Radar search + summarisation) |
 | Database | Supabase (Postgres) |
 | Observability | Langfuse Cloud - token counts, cost, latency, translation quality scores |
-| Jobs | GitHub Actions - Feed every 3h, Top Stories daily at 09:00 SGT, AI summary daily at 09:30 SGT |
+| Jobs | GitHub Actions - Feed every 3h, Top Stories daily at 09:00 SGT, AI summary daily at 09:30 SGT, digest email manual-first |
 
 ---
 
@@ -122,7 +122,7 @@ flowchart LR
 
 **Prerequisites:** Python 3.12+, Node 18+, `uv` ([install](https://docs.astral.sh/uv/))
 
-Copy `.env.example` -> `.env` and `frontend/.env.example` -> `frontend/.env` and fill in your Supabase, Anthropic, DeepSeek, Gemini, YouTube, and Langfuse keys.
+Copy `.env.example` -> `.env` and `frontend/.env.example` -> `frontend/.env` and fill in your Supabase, Anthropic, DeepSeek, Gemini, YouTube, Langfuse, and digest email settings.
 
 ```bash
 # Backend
@@ -130,6 +130,7 @@ uv sync
 uv run feed_ingest.py
 uv run summary_top_stories.py
 uv run summary_ai.py
+uv run send_daily_digest.py --dry-run --language en
 uv run python -m pytest -q
 
 # Frontend
@@ -147,5 +148,6 @@ Tests cover: URL->category mapping, scraper output schema, JSON parsing, archite
 | `Feed - Ingest` | `.github/workflows/feed_ingest.yml` | Raw news feed pipeline: scrape, translate, classify, assess, distill, and write `headlines` |
 | `Summary - Top Stories` | `.github/workflows/summary_top_stories.yml` | Runs the General Top Stories payload for the shared sparkle drawer |
 | `Summary - AI` | `.github/workflows/summary_ai.yml` | Runs the AI summary payload for the shared sparkle drawer |
+| `Digest - Email` | `.github/workflows/digest_email.yml` | Manual-first digest email renderer / sender with preview artifacts |
 | `CI - Test` | `.github/workflows/ci_test.yml` | Ruff, pytest, and frontend build checks |
 | `Ops - Keep Alive` | `.github/workflows/ops_keep_alive.yml` | Scheduled maintenance ping to keep Actions active |

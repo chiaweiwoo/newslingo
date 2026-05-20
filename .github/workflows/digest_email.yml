@@ -1,0 +1,51 @@
+name: Digest - Email
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Render preview only without sending"
+        required: false
+        default: true
+        type: boolean
+      language:
+        description: "Digest language"
+        required: false
+        default: "en"
+        type: choice
+        options:
+          - en
+          - zh
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  run-digest-email:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: "3.12"
+      - run: uv sync
+      - name: Render or send digest
+        run: |
+          DRY_FLAG=""
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            DRY_FLAG="--dry-run"
+          fi
+          uv run send_daily_digest.py --language "${{ inputs.language }}" $DRY_FLAG
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          DIGEST_EMAIL_TO: ${{ secrets.DIGEST_EMAIL_TO }}
+          DIGEST_EMAIL_FROM: ${{ secrets.DIGEST_EMAIL_FROM }}
+          GMAIL_SMTP_USER: ${{ secrets.GMAIL_SMTP_USER }}
+          GMAIL_SMTP_APP_PASSWORD: ${{ secrets.GMAIL_SMTP_APP_PASSWORD }}
+      - name: Upload digest preview artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest-preview-${{ inputs.language }}
+          path: digest_preview

@@ -126,6 +126,7 @@ Workflow names and filenames are standardized by product surface:
 | `Feed - Ingest` | `.github/workflows/feed_ingest.yml` | Raw feed pipeline |
 | `Summary - Top Stories` | `.github/workflows/summary_top_stories.yml` | Runs the General Top Stories payload |
 | `Summary - AI` | `.github/workflows/summary_ai.yml` | Runs the AI summary payload |
+| `Digest - Email` | `.github/workflows/digest_email.yml` | Manual-first digest email render/send job |
 | `CI - Test` | `.github/workflows/ci_test.yml` | Ruff, pytest, frontend build |
 | `Ops - Keep Alive` | `.github/workflows/ops_keep_alive.yml` | Keep scheduled Actions alive |
 
@@ -189,6 +190,20 @@ Important behavior:
 
 - `GEMINI_API_KEY` remains in config and workflows for future experiments
 - current runtime summary jobs should not require Gemini to succeed
+
+### Digest email (`send_daily_digest.py`)
+
+- reads latest active `weekly_summary` and `ai_radar`
+- renders one-language digest email:
+  - `en` or `zh`
+- missing sections do not fail the job; they render `Not available today.`
+- dry-run writes preview artifacts into `digest_preview/`
+- real send uses Gmail SMTP with:
+  - `DIGEST_EMAIL_TO`
+  - `DIGEST_EMAIL_FROM`
+  - `GMAIL_SMTP_USER`
+  - `GMAIL_SMTP_APP_PASSWORD`
+- keep the email job separate from summary-generation jobs
 
 ---
 

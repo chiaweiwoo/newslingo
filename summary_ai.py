@@ -44,8 +44,8 @@ deepseek = anthropic.Anthropic(
     timeout=120.0,
 )
 
-AI_RADAR_DISCOVERY_MODEL = "gemini-2.5-flash-lite"
-AI_RADAR_MODEL = "gemini-2.5-flash-lite"
+AI_RADAR_DISCOVERY_MODEL = "gemini-3.5-flash"
+AI_RADAR_MODEL = "gemini-3.5-flash"
 AI_RADAR_FALLBACK_MODEL = "gemini-3.5-flash"
 AI_RADAR_TRANSLATION_MODEL = "deepseek-v4-flash"
 LOOKBACK_DAYS = 7
@@ -139,7 +139,7 @@ CATEGORY_SPECS = [
 
 AI_RADAR_SYSTEM_PROMPT = (
     "You are a senior AI radar analyst preparing a concise briefing for busy professionals.\n"
-    "Use Google Search grounding to discover the most important AI developments from the last 7 days.\n"
+    "Use Google Search grounding to discover a broad but useful set of important AI developments from the last 7 days.\n"
     "You will handle exactly one category per request.\n\n"
     "OUTPUT FORMAT:\n"
     "{\n"
@@ -154,7 +154,8 @@ AI_RADAR_SYSTEM_PROMPT = (
     "  - Include only developments from the last 7 days.\n"
     "  - Prefer strategic, operational, financial, political, legal, or social impact.\n"
     "  - Avoid duplicates, minor follow-ons, and hype.\n"
-    "  - If the category is quiet, return fewer items rather than padding.\n"
+    "  - Gather broadly enough to preserve meaningful coverage within this category.\n"
+    "  - If the category is quiet, it is acceptable to return fewer items, but do not over-prune.\n"
     "  - Keep all fields in English only.\n"
     "  - Do not include citations, sources, URLs, or extra keys.\n\n"
     "SELF-CHECK BEFORE RETURNING:\n"
@@ -458,7 +459,13 @@ def _call_category(category: dict, today_utc: datetime) -> tuple[dict, object]:
             )
             usage.input_tokens += getattr(attempt_usage, "input_tokens", 0) or 0
             usage.output_tokens += getattr(attempt_usage, "output_tokens", 0) or 0
-            items = _normalize_items(_parse_items_payload(body))
+            parsed_payload = _parse_items_payload(body)
+            parsed_items = parsed_payload.get("items", []) if isinstance(parsed_payload, dict) else []
+            items = _normalize_items(parsed_payload)
+            print(
+                f"  [ai-radar] {category['key']} items: parsed={len(parsed_items)} normalized={len(items)}",
+                flush=True,
+            )
             if attempt > 1:
                 print(
                     f"  [ai-radar] {category['key']} recovered with fallback model {model}",
@@ -605,6 +612,7 @@ def _main() -> None:
         previous = _load_previous_radar()
         payload, _usage = _call_ai_radar(now)
         total_items = sum(len(category.get("items", [])) for category in payload.get("categories", []))
+        print(f"[ai-radar] total final items: {total_items}", flush=True)
         print(f"[ai-radar] generated {total_items} items across 3 categories", flush=True)
         _store_radar(now, payload, previous)
         print("[ai-radar] AI Radar updated successfully", flush=True)

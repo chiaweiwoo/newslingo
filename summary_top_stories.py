@@ -139,15 +139,15 @@ SELECTION_RESPONSE_SCHEMA = {
 REGION_DISCOVERY_SPECS = [
     {
         "region": "International",
-        "count_guidance": "Find around 6 to 8 strong candidate stories.",
+        "count_guidance": "Find around 12 to 18 strong candidate stories.",
         "focus": (
-            "Be highly selective. Prefer wars, elections, major policy shifts, trade disputes, "
+            "Gather broadly across wars, elections, major policy shifts, trade disputes, "
             "financial shocks, public health alerts, large disasters, sanctions, and major technology moves."
         ),
     },
     {
         "region": "Singapore",
-        "count_guidance": "Find around 4 to 6 strong candidate stories.",
+        "count_guidance": "Find around 8 to 12 strong candidate stories.",
         "focus": (
             "Prefer policy, elections, cost of living, housing, transport, courts, public safety, "
             "health, and major business or labour developments."
@@ -155,7 +155,7 @@ REGION_DISCOVERY_SPECS = [
     },
     {
         "region": "Malaysia",
-        "count_guidance": "Find around 4 to 6 strong candidate stories.",
+        "count_guidance": "Find around 8 to 12 strong candidate stories.",
         "focus": (
             "Prefer policy, parliament, courts, cost of living, public safety, health, trade, "
             "major infrastructure, and important corporate or state-level developments."
@@ -165,7 +165,7 @@ REGION_DISCOVERY_SPECS = [
 
 DISCOVERY_SYSTEM_PROMPT = (
     "You are a senior news editor building a candidate list for a daily Top Stories briefing.\n"
-    "Use Google Search grounding to discover only the most important developments from the last 7 days.\n\n"
+    "Use Google Search grounding to discover a broad but still relevant candidate pool from the last 7 days.\n\n"
     "OUTPUT FORMAT:\n"
     "{\n"
     '  "items": [\n'
@@ -181,10 +181,11 @@ DISCOVERY_SYSTEM_PROMPT = (
     "  - Use searched material from this run only.\n"
     "  - Include only developments from the last 7 days.\n"
     "  - Prefer concrete impact over commentary, ceremony, entertainment, sports, and trivia.\n"
+    "  - Gather broadly enough to build a rich candidate pool before later selection.\n"
     "  - Keep titles and summaries in English only.\n"
     "  - Do not include citations, URLs, source lists, or extra keys.\n"
     "  - Do not invent facts, figures, or named entities.\n"
-    "  - If fewer stories meet the standard, return fewer items rather than padding.\n"
+    "  - Do not over-prune at this stage. Exclude only clearly weak, trivial, duplicate, or irrelevant items.\n"
     "  - Every item must use one valid region and one valid theme.\n\n"
     "SELF-CHECK BEFORE RETURNING:\n"
     "  - Confirm the output is valid JSON.\n"
@@ -203,7 +204,7 @@ SELECTION_SYSTEM_PROMPT = (
     "  - International news must be held to a higher bar because the pool is much larger.\n"
     "  - Avoid duplicates, minor updates, ceremony, celebrity, sports, isolated low-signal crime, and fluff.\n"
     "  - Return fewer stories rather than weak filler.\n"
-    "  - Aim for 8 to 10 total topics, but do not force the count.\n"
+    "  - Aim for 8 to 12 total topics, but do not force the count.\n"
     "  - Do not force equal region balance.\n\n"
     "OUTPUT FORMAT:\n"
     "{\n"
@@ -586,12 +587,20 @@ def _call_summary(today_utc: datetime) -> tuple[dict, object]:
         total_input += usage.input_tokens
         total_output += usage.output_tokens
 
-        items = _parse_items(body, f"discover-{region.lower()}")
-        for it in items:
+        parsed_items = _parse_items(body, f"discover-{region.lower()}")
+        normalized_items = []
+        for it in parsed_items:
             it["region"] = region  # enforce consistency
-            all_candidates.append(it)
+            st = _sanitize_topic(it)
+            if st:
+                normalized_items.append(st)
+                all_candidates.append(st)
+        print(
+            f"  [summary] {region} candidates: parsed={len(parsed_items)} normalized={len(normalized_items)}",
+            flush=True,
+        )
 
-    print(f"  [summary] selecting top stories from {len(all_candidates)} candidates...", flush=True)
+    print(f"  [summary] selection input candidates: {len(all_candidates)}", flush=True)
     candidate_lines = []
     for i, it in enumerate(all_candidates):
         candidate_lines.append(f"IDX: {i}")
@@ -619,9 +628,11 @@ def _call_summary(today_utc: datetime) -> tuple[dict, object]:
         st = _sanitize_topic(t)
         if st:
             sanitized.append(st)
+    print(f"  [summary] selected topics: {len(sanitized)}", flush=True)
 
     print(f"  [summary] translating {len(sanitized)} topics to Chinese...", flush=True)
     payload, trans_usage = _translate_to_zh(sanitized)
+    print(f"  [summary] translated topics: {len(payload.get('topics', []))}", flush=True)
     total_input += trans_usage.input_tokens
     total_output += trans_usage.output_tokens
 

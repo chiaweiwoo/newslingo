@@ -38,8 +38,8 @@ def _make_deepseek_response(text: str, in_tok: int = 100, out_tok: int = 200):
 
 class TestModelAndPromptConfig:
     def test_models_use_gemini_and_deepseek(self):
-        assert summary_ai.AI_RADAR_MODEL == "gemini-2.5-flash-lite"
-        assert summary_ai.AI_RADAR_DISCOVERY_MODEL == "gemini-2.5-flash-lite"
+        assert summary_ai.AI_RADAR_MODEL == "gemini-3.5-flash"
+        assert summary_ai.AI_RADAR_DISCOVERY_MODEL == "gemini-3.5-flash"
         assert summary_ai.AI_RADAR_FALLBACK_MODEL == "gemini-3.5-flash"
         assert summary_ai.AI_RADAR_TRANSLATION_MODEL == "deepseek-v4-flash"
 
@@ -54,6 +54,7 @@ class TestModelAndPromptConfig:
         assert "last 7 days" in prompt
         assert "Return ONLY the JSON object" in prompt
         assert "Do not include citations, sources, URLs, or extra keys." in prompt
+        assert "do not over-prune" in prompt.lower()
 
     def test_ai_response_schema_is_minimal(self):
         assert summary_ai.AI_RADAR_RESPONSE_SCHEMA["required"] == ["items"]
@@ -129,12 +130,29 @@ class TestCallAiRadar:
             )
 
         assert [c.args[0] for c in call_gemini.call_args_list] == [
-            "gemini-2.5-flash-lite",
+            "gemini-3.5-flash",
             "gemini-3.5-flash",
         ]
         assert result["key"] == "product"
         assert usage.input_tokens == 11
         assert usage.output_tokens == 6
+
+    def test_call_category_emits_count_logs(self):
+        with patch.object(
+            summary_ai,
+            "_call_gemini_json",
+            return_value=(
+                json.dumps({"items": [{"title": "A", "description": "B"}]}),
+                _usage(10, 5),
+            ),
+        ), patch("builtins.print") as mock_print:
+            summary_ai._call_category(
+                summary_ai.CATEGORY_SPECS[0],
+                datetime(2026, 5, 20, tzinfo=timezone.utc),
+            )
+
+        printed = "\n".join(str(call.args[0]) for call in mock_print.call_args_list if call.args)
+        assert "[ai-radar] governance items: parsed=1 normalized=1" in printed
 
     def test_call_ai_radar_combines_category_results(self):
         with patch.object(

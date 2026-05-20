@@ -49,11 +49,12 @@ class TestPromptContracts:
         assert "Return ONLY the JSON object" in prompt
         assert "last 7 days" in prompt
         assert "Do not include citations, URLs, source lists, or extra keys." in prompt
+        assert "Do not over-prune at this stage." in prompt
 
     def test_selection_prompt_requires_topics_schema(self):
         prompt = summary_top_stories.SELECTION_SYSTEM_PROMPT
         assert '"topics"' in prompt
-        assert "8 to 10 total topics" in prompt
+        assert "8 to 12 total topics" in prompt
         assert "Return ONLY the JSON object" in prompt
         assert "Do not include citations, URLs, source lists, or extra keys." in prompt
 
@@ -102,6 +103,29 @@ class TestCallSummary:
     def test_extract_json_object_recovers_from_prose(self):
         text = 'Here:\n{"topics": [{"title": "A"}]}\nDone.'
         assert summary_top_stories._extract_json_object(text) == '{"topics": [{"title": "A"}]}'
+
+    def test_call_summary_emits_count_logs(self):
+        with patch.object(
+            summary_top_stories,
+            "_call_gemini_json",
+            side_effect=[
+                (json.dumps({"items": [{"title": "A", "summary": "A sum", "region": "International", "theme": "Politics"}]}), _usage(10, 5)),
+                (json.dumps({"items": [{"title": "B", "summary": "B sum", "region": "Singapore", "theme": "Society"}]}), _usage(12, 6)),
+                (json.dumps({"items": [{"title": "C", "summary": "C sum", "region": "Malaysia", "theme": "Economy"}]}), _usage(14, 7)),
+                (json.dumps({"topics": [{"title": "A", "summary": "A sum", "region": "International", "theme": "Politics"}]}), _usage(20, 8)),
+            ],
+        ), patch.object(
+            summary_top_stories,
+            "_translate_to_zh",
+            return_value=({"topics": [{"title": "A", "summary": "A sum", "region": "International", "theme": "Politics"}]}, _usage(9, 4)),
+        ), patch("builtins.print") as mock_print:
+            summary_top_stories._call_summary(datetime(2026, 5, 20, tzinfo=timezone.utc))
+
+        printed = "\n".join(str(call.args[0]) for call in mock_print.call_args_list if call.args)
+        assert "[summary] International candidates: parsed=1 normalized=1" in printed
+        assert "[summary] selection input candidates: 3" in printed
+        assert "[summary] selected topics: 1" in printed
+        assert "[summary] translated topics: 1" in printed
 
     def test_parse_items_accepts_top_level_array(self):
         items = summary_top_stories._parse_items('[{"title": "A", "summary": "B"}]', "discover")

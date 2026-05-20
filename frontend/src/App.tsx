@@ -225,7 +225,7 @@ function MainApp() {
               <Image
                 src={newslingoCompassIcon}
                 alt="NewsLingo"
-                boxSize="23px"
+                boxSize="28px"
                 flexShrink={0}
               />
               <Heading

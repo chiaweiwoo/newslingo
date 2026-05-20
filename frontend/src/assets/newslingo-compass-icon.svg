@@ -1,10 +1,9 @@
-<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+<svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
   <title id="title">Newslingo compass icon</title>
-  <desc id="desc">A friendly compass icon with a small sparkle, designed to sit beside the Newslingo wordmark.</desc>
-  <circle cx="30" cy="34" r="18" stroke="#0F766E" stroke-width="4" stroke-linecap="round"/>
-  <path d="M44.5 19.5C47.5 22.5 49.2 26.6 49.2 31" stroke="#0F766E" stroke-width="4" stroke-linecap="round"/>
-  <path d="M39.8 22.8L32.4 43.1C32.1 43.9 31 44 30.5 43.3L25.9 36.9C25.6 36.5 25.6 35.9 26 35.5L38.1 21.9C38.8 21.2 40.1 21.9 39.8 22.8Z" fill="#0F766E"/>
-  <path d="M24.2 45.2L31.6 24.9C31.9 24.1 33 24 33.5 24.7L38.1 31.1C38.4 31.5 38.4 32.1 38 32.5L25.9 46.1C25.2 46.8 23.9 46.1 24.2 45.2Z" fill="#5EEAD4"/>
-  <circle cx="32" cy="34" r="2.6" fill="#F8FAFC"/>
-  <path d="M51 8L52.8 13.2L58 15L52.8 16.8L51 22L49.2 16.8L44 15L49.2 13.2L51 8Z" fill="#0F766E"/>
+  <desc id="desc">A simplified compass mark for the Newslingo header.</desc>
+  <circle cx="20" cy="20" r="12" stroke="#5EEAD4" stroke-width="2.8"/>
+  <path d="M24.9 14.7L21.3 23.8C21.1 24.3 20.5 24.4 20.1 24L17.5 21.4C17.1 21 17.2 20.4 17.7 20.2L26.8 16.6C27.4 16.4 27.9 16.9 27.7 17.5L24.1 26.6C23.9 27.1 23.3 27.2 22.9 26.8L20.3 24.2C19.9 23.8 20 23.2 20.5 23L29.6 19.4" fill="none"/>
+  <path d="M25.2 14.8L20.9 25.2C20.7 25.7 20.1 25.8 19.7 25.4L14.6 20.3C14.2 19.9 14.3 19.3 14.8 19.1L25.2 14.8Z" fill="#0F766E"/>
+  <path d="M14.8 25.2L19.1 14.8C19.3 14.3 19.9 14.2 20.3 14.6L25.4 19.7C25.8 20.1 25.7 20.7 25.2 20.9L14.8 25.2Z" fill="#5EEAD4"/>
+  <circle cx="20" cy="20" r="1.9" fill="#F8FAFC"/>
 </svg>

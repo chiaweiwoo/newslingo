@@ -4,8 +4,6 @@ NewsLingo AI Radar job - runs daily at 09:30 SGT.
 This job uses Gemini with Google Search grounding to discover important AI
 developments across governance, product, and infrastructure, then uses
 DeepSeek to translate the final payload into Simplified Chinese.
-
-Non-fatal: any failure is logged and the job exits 0.
 """
 
 import json
@@ -500,8 +498,8 @@ def _main() -> None:
         _store_radar(now, payload, previous)
         print("[ai-radar] AI Radar updated successfully", flush=True)
     except Exception as e:
-        print(f"[ai-radar] ERROR (non-fatal): {e}", flush=True)
-        sys.exit(0)
+        print(f"[ai-radar] ERROR: {e}", flush=True)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

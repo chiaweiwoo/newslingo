@@ -4,8 +4,6 @@ NewsLingo Top Stories summary job - runs daily at 09:00 SGT.
 This version uses Google Gemini with Google Search grounding to discover and
 rank important general news across International, Singapore, and Malaysia, then
 uses DeepSeek to translate the final payload into Simplified Chinese.
-
-Non-fatal: any failure is logged and the job exits 0.
 """
 
 import json
@@ -481,8 +479,8 @@ def _main() -> None:
         _store_summary(now, payload, previous)
         print("[summary] summary updated successfully", flush=True)
     except Exception as e:
-        print(f"[summary] ERROR (non-fatal): {e}", flush=True)
-        sys.exit(0)
+        print(f"[summary] ERROR: {e}", flush=True)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

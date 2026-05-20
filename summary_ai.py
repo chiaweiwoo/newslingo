@@ -150,7 +150,7 @@ def _extract_json_object(text: str) -> str | None:
     # and attempting to close the braces/brackets.
     for i in range(len(body), 0, -1):
         candidate_body = body[:i]
-        
+
         # Quick check: if we're in the middle of a string, close it
         # (This is a heuristic, but good enough for news summaries)
         stack = []
@@ -177,25 +177,25 @@ def _extract_json_object(text: str) -> str | None:
                 elif char == "]":
                     if stack and stack[-1] == "]":
                         stack.pop()
-        
+
         repaired = candidate_body
         if in_string:
             repaired += '"'
-        
+
         # Basic cleanup: remove trailing commas or incomplete tokens before closing
         repaired = repaired.strip()
         while repaired and repaired[-1] in (",", "[", "{", ":", " "):
             repaired = repaired[:-1].strip()
-            
+
         if stack:
             repaired += "".join(reversed(stack))
-            
+
         try:
             json.loads(repaired)
             return repaired
         except json.JSONDecodeError:
             continue
-            
+
     return None
 
 

@@ -1,4 +1,4 @@
-name: This Week Summary
+name: Summary - Top Stories
 on:
   schedule:
     - cron: '0 1 * * *'  # daily at 01:00 UTC (09:00 SGT)
@@ -8,7 +8,7 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  run-weekly:
+  run-top-stories:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6.0.2

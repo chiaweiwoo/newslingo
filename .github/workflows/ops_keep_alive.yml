@@ -1,4 +1,4 @@
-name: Keep Alive
+name: Ops - Keep Alive
 
 # GitHub disables scheduled workflows on repos with no activity for 60 days.
 # This workflow pings itself weekly to prevent that.

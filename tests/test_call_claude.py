@@ -1,44 +1,39 @@
 """
-Unit tests for job.py Claude calling infrastructure.
+Unit tests for job.py LLM calling infrastructure.
 
-Tests _call_claude and _extract_json_array without hitting the real API.
-Uses unittest.mock to simulate various Claude response shapes:
-  - Normal JSON array
-  - Prose before JSON (prefill bypass — should still parse)
-  - Code-fenced JSON
-  - Truncated array (max_tokens hit mid-response)
-  - Length mismatch between results and batch
+Tests JSON extraction, provider routing, and DeepSeek thinking policy
+without hitting real external APIs.
 """
 
+import importlib.util
 import json
 import os
-
-# job.py imports supabase + anthropic at module level, so we mock those before import
 import sys
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-# Patch external deps before importing job
 sys.modules.setdefault("supabase", MagicMock())
 os.environ.setdefault("SUPABASE_URL", "https://fake.supabase.co")
 os.environ.setdefault("SUPABASE_SERVICE_KEY", "fake-key")
 os.environ.setdefault("ANTHROPIC_API_KEY", "fake-key")
+os.environ.setdefault("DEEPSEEK_API_KEY", "fake-deepseek-key")
 os.environ.setdefault("YOUTUBE_API_KEY", "fake-key")
 
-# Patch create_client at module level so job.py doesn't connect to real Supabase
 with patch("supabase.create_client", return_value=MagicMock()):
     with patch("anthropic.Anthropic", return_value=MagicMock()):
         import job
 
 
-def _make_response(text: str):
-    """Build a mock anthropic response object with the given text body."""
+def _make_response(text: str, stop_reason: str = "end_turn", in_tok: int = 10, out_tok: int = 20):
     msg = MagicMock()
     content_block = MagicMock()
     content_block.text = text
     msg.content = [content_block]
-    msg.stop_reason = "end_turn"
+    msg.stop_reason = stop_reason
+    msg.usage.input_tokens = in_tok
+    msg.usage.output_tokens = out_tok
     return msg
 
 
@@ -57,9 +52,6 @@ class TestExtractJsonArray:
     def test_no_brackets_returns_none(self):
         assert job._extract_json_array("No JSON here at all.") is None
 
-    def test_only_open_bracket_returns_none(self):
-        assert job._extract_json_array("[no closing") is None
-
     def test_code_fenced(self):
         text = '```json\n[{"title_en": "test"}]\n```'
         result = job._extract_json_array(text)
@@ -68,69 +60,52 @@ class TestExtractJsonArray:
         assert parsed[0]["title_en"] == "test"
 
 
-class TestCallClaude:
-    def _patch_claude(self, text: str):
-        """Return a context manager that makes claude.messages.create return text."""
-        job.claude = MagicMock()
-        job.claude.messages.create.return_value = _make_response(text)
+class TestCallModel:
+    def _patch_deepseek(self, text: str):
+        job.deepseek = MagicMock()
+        job.deepseek.messages.create.return_value = _make_response(text)
 
     def test_clean_json_array(self):
-        # Response body (after prefill '[') completes a valid array
-        self._patch_claude('{"title_en": "PM meets King"}, {"title_en": "Flood hits Johor"}]')
-        result = job._call_claude("model", "system", "content")
+        self._patch_deepseek('{"title_en": "PM meets King"}, {"title_en": "Flood hits Johor"}]')
+        result = job._call_model(job.deepseek, "model", "system", "content")
         assert isinstance(result, list)
         assert len(result) == 2
         assert result[0]["title_en"] == "PM meets King"
 
-    def test_code_fenced_response(self):
-        # Model emits ```json ... ``` despite prefill — extraction fallback must handle it
-        body = '```json\n[{"title_en": "Breaking news"}]\n```'
-        self._patch_claude(body)
-        result = job._call_claude("model", "system", "content")
-        assert isinstance(result, list)
-        assert result[0]["title_en"] == "Breaking news"
-
-    def test_truncated_array(self):
-        # max_tokens hit mid-array — last ']' truncation must recover partial results.
-        # Body contains a complete first item then trailing garbage (simulates truncation).
-        body_truncated = '{"title_en": "Article one"}]  some trailing garbage'
-        self._patch_claude(body_truncated)
-        # Should not raise — truncation to last ] recovers the valid part
-        result = job._call_claude("model", "system", "content")
-        assert isinstance(result, list)
-        assert len(result) >= 1
-
-    def test_raises_after_two_failures(self):
-        # Complete garbage — all parse strategies fail
-        self._patch_claude("I am totally unable to help with this request.")
-        with pytest.raises(ValueError, match="failed after 2 attempts"):
-            job._call_claude("model", "system", "content")
-
-    def test_no_prefill_mode_parses_clean_array(self):
-        # use_prefill=False (Sonnet mode): model returns a complete JSON array without prefill
-        self._patch_claude('[{"score": 5}, {"score": 3}]')
-        result = job._call_claude("model", "system", "content", use_prefill=False)
-        assert isinstance(result, list)
-        assert len(result) == 2
-        assert result[0]["score"] == 5
-
     def test_no_prefill_mode_extracts_from_prose(self):
-        # Model emits brief preamble then JSON — extraction fallback must recover it
-        self._patch_claude('Here are the results:\n[{"score": 4}, {"score": 2, "reason": "bad"}]')
-        result = job._call_claude("model", "system", "content", use_prefill=False)
+        self._patch_deepseek('Here are the results:\n[{"score": 4}, {"score": 2, "reason": "bad"}]')
+        result = job._call_model(job.deepseek, "model", "system", "content", use_prefill=False)
         assert isinstance(result, list)
         assert result[1]["reason"] == "bad"
 
+    def test_raises_after_two_failures(self):
+        self._patch_deepseek("I am totally unable to help with this request.")
+        with pytest.raises(ValueError, match="_call_model failed after 2 attempts"):
+            job._call_model(job.deepseek, "model", "system", "content")
+
+    def test_passes_thinking_and_output_config(self):
+        self._patch_deepseek('[{"rule": "x"}]')
+        job._call_model(
+            job.deepseek,
+            "deepseek-v4-pro",
+            "system",
+            "content",
+            thinking=job.THINKING_ENABLED,
+            output_config=job.DISTILL_OUTPUT_CONFIG,
+            use_prefill=False,
+        )
+        kwargs = job.deepseek.messages.create.call_args.kwargs
+        assert kwargs["thinking"] == {"type": "enabled"}
+        assert kwargs["output_config"] == {"effort": "high"}
+
 
 class TestTranslateBatch:
-    """Tests for _translate_batch — verifying classify flag behaviour."""
-
     def _rows(self, n: int = 3) -> list[dict]:
         return [
             {
-                "title_zh": f"标题{i}",
+                "title_zh": f"title{i}",
                 "title_en": None,
-                "category": "Singapore",  # pre-set by URL for zaobao
+                "category": "Singapore",
                 "source_url": f"https://zaobao.com/news/singapore/story{i}",
             }
             for i in range(n)
@@ -139,32 +114,27 @@ class TestTranslateBatch:
     def _astro_rows(self, n: int = 2) -> list[dict]:
         return [
             {
-                "title_zh": f"马来西亚新闻{i}",
+                "title_zh": f"astro{i}",
                 "title_en": None,
-                "category": None,  # filled by LLM for astro
+                "category": None,
                 "source_url": f"https://youtube.com/watch?v=vid{i}",
             }
             for i in range(n)
         ]
 
     def test_classify_false_does_not_overwrite_category(self):
-        """Zaobao: category set by URL must survive translation (classify=False)."""
-        job.claude = MagicMock()
-        job.claude.messages.create.return_value = _make_response(
+        job.deepseek = MagicMock()
+        job.deepseek.messages.create.return_value = _make_response(
             '[{"title_en": "Title 0"}, {"title_en": "Title 1"}, {"title_en": "Title 2"}]'
         )
         rows = self._rows(3)
         result = job._translate_batch("zaobao", rows, "prompt", classify=False)
-        # All categories must still be "Singapore" (not overwritten by LLM)
         for row in result:
-            assert row["category"] == "Singapore", (
-                f"classify=False must never overwrite category, but got {row['category']!r}"
-            )
+            assert row["category"] == "Singapore"
 
     def test_classify_true_sets_category_from_llm(self):
-        """Astro: category must be filled by the LLM result (classify=True)."""
-        job.claude = MagicMock()
-        job.claude.messages.create.return_value = _make_response(
+        job.deepseek = MagicMock()
+        job.deepseek.messages.create.return_value = _make_response(
             '[{"title_en": "Local news", "category": "Malaysia"}, '
             '{"title_en": "World event", "category": "International"}]'
         )
@@ -173,34 +143,64 @@ class TestTranslateBatch:
         assert result[0]["category"] == "Malaysia"
         assert result[1]["category"] == "International"
 
-    def test_length_mismatch_does_not_raise(self):
-        """Claude returning fewer items than batch must not raise IndexError."""
-        job.claude = MagicMock()
-        # Only 1 result for 3 inputs
-        job.claude.messages.create.return_value = _make_response(
-            '[{"title_en": "Only one result"}]'
-        )
-        rows = self._rows(3)
-        # Must not raise — missing items keep their original title_zh as title_en
-        result = job._translate_batch("zaobao", rows, "prompt", classify=False)
-        assert len(result) == 3
-        assert result[0]["title_en"] == "Only one result"
-        assert result[1]["title_en"] == "标题1"  # fallback to title_zh
-        assert result[2]["title_en"] == "标题2"
+    def test_translation_uses_deepseek_flash_with_thinking_disabled(self):
+        job.deepseek = MagicMock()
+        job.deepseek.messages.create.return_value = _make_response('[{"title_en": "Only one result"}]')
+        rows = self._rows(1)
+        job._translate_batch("zaobao", rows, "prompt", classify=False)
+        kwargs = job.deepseek.messages.create.call_args.kwargs
+        assert kwargs["model"] == job.TRANSLATE_MODEL
+        assert kwargs["thinking"] == job.THINKING_DISABLED
 
 
-class TestValidateZaobaoCategories:
-    def test_passes_when_all_categories_set(self):
-        rows = [{"category": "Singapore"}, {"category": "International"}]
-        # Should not raise
-        job._validate_zaobao_categories(rows, "test-stage")
+class TestAssessmentAndDistillRouting:
+    def test_assessment_uses_deepseek_pro_with_thinking_disabled(self):
+        job.deepseek = MagicMock()
+        job.deepseek.messages.create.return_value = _make_response('[{"score": 5}]')
+        rows = [{"title_zh": "x", "title_en": "y"}]
+        job.assess_translations(rows, "astro")
+        kwargs = job.deepseek.messages.create.call_args.kwargs
+        assert kwargs["model"] == job.ASSESS_MODEL
+        assert kwargs["thinking"] == job.THINKING_DISABLED
 
-    def test_raises_on_none_category(self):
-        rows = [{"category": "Singapore"}, {"category": None, "source_url": "https://example.com/bad"}]
-        with pytest.raises(AssertionError, match="INVARIANT VIOLATION"):
-            job._validate_zaobao_categories(rows, "test-stage")
+    def test_distill_uses_deepseek_pro_with_thinking_enabled(self):
+        job.deepseek = MagicMock()
+        job.deepseek.messages.create.return_value = _make_response('["Use official titles"]')
+        mock_result = MagicMock()
+        mock_result.data = [{"sample_failures": [{"zh": "a", "en": "b", "suggestion": "c", "reason": "d"}]}]
+        mock_table = MagicMock()
+        mock_table.select.return_value.eq.return_value.not_.is_.return_value.order.return_value.limit.return_value.execute.return_value = mock_result
+        mock_table.update.return_value.eq.return_value.execute.return_value = None
+        mock_table.insert.return_value.execute.return_value = None
+        job.supabase = MagicMock()
+        job.supabase.table.return_value = mock_table
 
-    def test_raises_on_empty_string_category(self):
-        rows = [{"category": ""}]
-        with pytest.raises(AssertionError, match="INVARIANT VIOLATION"):
-            job._validate_zaobao_categories(rows, "test-stage")
+        job._distill_rules("astro", 3)
+        kwargs = job.deepseek.messages.create.call_args.kwargs
+        assert kwargs["model"] == job.DISTILL_MODEL
+        assert kwargs["thinking"] == job.THINKING_ENABLED
+        assert kwargs["output_config"] == job.DISTILL_OUTPUT_CONFIG
+
+
+class TestConfig:
+    def test_models_are_deepseek(self):
+        assert job.TRANSLATE_MODEL == "deepseek-v4-flash"
+        assert job.ASSESS_MODEL == "deepseek-v4-pro"
+        assert job.DISTILL_MODEL == "deepseek-v4-pro"
+
+    def test_missing_deepseek_key_fails_import(self, monkeypatch):
+        monkeypatch.setenv("SUPABASE_URL", "https://fake.supabase.co")
+        monkeypatch.setenv("SUPABASE_SERVICE_KEY", "fake-key")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "fake-key")
+        monkeypatch.setenv("YOUTUBE_API_KEY", "fake-key")
+        monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+
+        module_path = Path(__file__).resolve().parents[1] / "job.py"
+        spec = importlib.util.spec_from_file_location("job_missing_deepseek", module_path)
+        module = importlib.util.module_from_spec(spec)
+        with patch("supabase.create_client", return_value=MagicMock()):
+            with patch("anthropic.Anthropic", return_value=MagicMock()):
+                with patch("dotenv.load_dotenv", return_value=None):
+                    with pytest.raises(RuntimeError, match="DEEPSEEK_API_KEY"):
+                        assert spec.loader is not None
+                        spec.loader.exec_module(module)

@@ -25,18 +25,30 @@ load_dotenv(override=True)
 SUPABASE_URL         = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 ANTHROPIC_API_KEY    = os.getenv("ANTHROPIC_API_KEY")
+DEEPSEEK_API_KEY     = os.getenv("DEEPSEEK_API_KEY")
 YOUTUBE_API_KEY      = os.getenv("YOUTUBE_API_KEY")
 os.environ.setdefault("LANGFUSE_HOST", os.getenv("LANGFUSE_BASE_URL", "https://cloud.langfuse.com"))
 
+if not DEEPSEEK_API_KEY:
+    raise RuntimeError("DEEPSEEK_API_KEY is required for job.py")
+
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-claude   = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=120.0)  # prevent hung connections stalling the job
+claude   = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=120.0)
+deepseek = anthropic.Anthropic(
+    api_key=DEEPSEEK_API_KEY,
+    base_url="https://api.deepseek.com/anthropic",
+    timeout=120.0,
+)
 
 CLAUDE_BATCH_SIZE  = 50          # translation batch size
 ASSESS_BATCH_SIZE  = 20          # assess batch — smaller; Sonnet drops/duplicates items at higher counts
-TRANSLATE_MODEL    = "claude-sonnet-4-6"
-ASSESS_MODEL       = "claude-sonnet-4-6"
-DISTILL_MODEL      = "claude-sonnet-4-6"
+TRANSLATE_MODEL    = "deepseek-v4-flash"
+ASSESS_MODEL       = "deepseek-v4-pro"
+DISTILL_MODEL      = "deepseek-v4-pro"
 ASSESS_PASS_SCORE  = 3           # score >= 3 passes, < 3 triggers retry
+THINKING_DISABLED  = {"type": "disabled"}
+THINKING_ENABLED   = {"type": "enabled"}
+DISTILL_OUTPUT_CONFIG = {"effort": "high"}
 
 # ── System prompts ────────────────────────────────────────────────────────────
 
@@ -394,9 +406,30 @@ def _extract_json_array(text: str) -> str | None:
     return text[first:last + 1]
 
 
+def _assistant_text(message: object) -> str:
+    """Collect plain-text assistant blocks from an Anthropic-format response."""
+    blocks = getattr(message, "content", None) or []
+    parts: list[str] = []
+    for block in blocks:
+        text = getattr(block, "text", None)
+        if isinstance(text, str):
+            parts.append(text)
+    return "\n".join(parts)
+
+
 @observe(as_type="generation")
-def _call_claude(model: str, system: str, content: str, use_prefill: bool = True, name: str = "claude") -> list[dict]:
-    """Call Claude expecting a JSON array.
+def _call_model(
+    client: object,
+    model: str,
+    system: str,
+    content: str,
+    *,
+    thinking: dict | None = None,
+    output_config: dict | None = None,
+    use_prefill: bool = True,
+    name: str = "llm",
+) -> list[dict]:
+    """Call an Anthropic-compatible model expecting a JSON array.
 
     use_prefill=True  — adds {"role": "assistant", "content": "["} to force JSON output.
                         Supported by Haiku. Use for translation calls.
@@ -418,18 +451,24 @@ def _call_claude(model: str, system: str, content: str, use_prefill: bool = True
         if use_prefill:
             messages.append({"role": "assistant", "content": "["})
 
-        msg = claude.messages.create(
-            model=model,
-            max_tokens=16000,
-            system=system,
-            messages=messages,
-        )
+        kwargs = {
+            "model": model,
+            "max_tokens": 16000,
+            "system": system,
+            "messages": messages,
+        }
+        if thinking is not None:
+            kwargs["thinking"] = thinking
+        if output_config is not None:
+            kwargs["output_config"] = output_config
+
+        msg = client.messages.create(**kwargs)
         _langfuse_client().update_current_generation(
             name=name,
             model=model,
             usage_details={"input": msg.usage.input_tokens, "output": msg.usage.output_tokens},
         )
-        body = msg.content[0].text if msg.content else ""
+        body = _assistant_text(msg)
 
         candidates: list[str] = []
         if use_prefill:
@@ -458,7 +497,7 @@ def _call_claude(model: str, system: str, content: str, use_prefill: bool = True
 
         # All candidates failed for this attempt — log and retry
         print(
-            f"  [claude] all parse strategies failed on attempt {attempt + 1} "
+            f"  [llm] all parse strategies failed on attempt {attempt + 1} "
             f"(model={model} stop_reason={msg.stop_reason} prefill={use_prefill})",
             flush=True,
         )
@@ -466,7 +505,7 @@ def _call_claude(model: str, system: str, content: str, use_prefill: bool = True
         print(f"  body (last 200): {body[-200:]!r}", flush=True)
 
     raise ValueError(
-        f"_call_claude failed after 2 attempts (model={model}); last error: {last_error}"
+        f"_call_model failed after 2 attempts (model={model}); last error: {last_error}"
     )
 
 
@@ -479,7 +518,15 @@ def _translate_batch(source: str, rows: list[dict], prompt: str, classify: bool 
     for i in range(0, len(rows), CLAUDE_BATCH_SIZE):
         batch = rows[i:i + CLAUDE_BATCH_SIZE]
         numbered = "\n".join(f"{j+1}. {r['title_zh']}" for j, r in enumerate(batch))
-        results = _call_claude(TRANSLATE_MODEL, prompt, f"Translate these headlines:\n{numbered}", use_prefill=False, name=f"translate:{source}")
+        results = _call_model(
+            deepseek,
+            TRANSLATE_MODEL,
+            prompt,
+            f"Translate these headlines:\n{numbered}",
+            thinking=THINKING_DISABLED,
+            use_prefill=False,
+            name=f"translate:{source}",
+        )
         if len(results) != len(batch):
             print(
                 f"  [{source}] WARNING: translate returned {len(results)} for {len(batch)} input items",
@@ -557,7 +604,15 @@ def assess_translations(rows: list[dict], source: str) -> tuple[list[dict], list
             f"{j+1}. ZH: {r['title_zh']} | EN: {r['title_en']}"
             for j, r in enumerate(batch)
         )
-        results = _call_claude(ASSESS_MODEL, ASSESS_SYSTEM_PROMPT, f"Assess these translations:\n{numbered}", use_prefill=False, name=f"assess:{source}")
+        results = _call_model(
+            deepseek,
+            ASSESS_MODEL,
+            ASSESS_SYSTEM_PROMPT,
+            f"Assess these translations:\n{numbered}",
+            thinking=THINKING_DISABLED,
+            use_prefill=False,
+            name=f"assess:{source}",
+        )
         if len(results) != len(batch):
             print(
                 f"  [{source}] WARNING: assess returned {len(results)} for {len(batch)} input items "
@@ -668,10 +723,13 @@ def _distill_rules(source: str, run_count: int) -> None:
         f"{i+1}. ZH: {f['zh']}\n   Bad EN: {f['en']}\n   Correct EN: {f['suggestion']}\n   Reason: {f.get('reason', '')}"
         for i, f in enumerate(actionable[:60])
     )
-    rules = _call_claude(
+    rules = _call_model(
+        deepseek,
         DISTILL_MODEL,
         DISTILL_SYSTEM_PROMPT,
         f"Extract translation rules from these failures:\n{numbered}",
+        thinking=THINKING_ENABLED,
+        output_config=DISTILL_OUTPUT_CONFIG,
         use_prefill=False,
         name=f"distill:{source}",
     )

@@ -11,12 +11,10 @@ The translation pipeline self-improves: a quality-assessment step scores each ba
   <tr>
     <td><img src="docs/screenshot-feed.jpeg" alt="News feed" width="200"/></td>
     <td><img src="docs/screenshot-about.jpeg" alt="About drawer" width="200"/></td>
-    <td><img src="docs/screenshot-inside-ai.jpeg" alt="Inside AI drawer" width="200"/></td>
   </tr>
   <tr>
     <td align="center"><sub>News feed</sub></td>
     <td align="center"><sub>About</sub></td>
-    <td align="center"><sub>Inside AI</sub></td>
   </tr>
 </table>
 
@@ -33,7 +31,6 @@ The translation pipeline self-improves: a quality-assessment step scores each ba
 | Read aloud | Speaker icon on each card |
 | Search | Search icon in header - full-text across both titles |
 | Share | Share icon on each card |
-| Inside AI | `...` -> Inside AI - distilled translation rules from past failures |
 | Dark mode / font size | `...` -> Preferences |
 
 ---
@@ -101,13 +98,22 @@ flowchart LR
 
 ---
 
+## Technical Highlights
+
+- **Hybrid AI routing** — Claude Sonnet for reasoning-heavy tasks (Top Stories multi-pass generation and fact-check, AI Radar web-grounded search); DeepSeek V4 Flash/Pro via the Anthropic-compatible SDK for high-throughput tasks (translation, quality assessment, rule distillation, EN→ZH passes). Each model is matched to what it does best.
+- **Prompt caching** — Top Stories Pass 1 and Pass 2 share a byte-identical `cache_control: ephemeral` headlines block in the system prompt. Pass 2 (fact-check) pays ~10% of Pass 1's input cost on a cache hit.
+- **Self-improving translation** — every ingest run scores translations 1–5 using DeepSeek Pro, then distils recurring failures into rules that are prepended to the next run's system prompt. Quality improves without any manual tuning.
+- **Code-split ML scoring** — the Translation Quiz loads `@huggingface/transformers` (`all-MiniLM-L6-v2`, 23 MB WASM) lazily on first use only. Users who never open the quiz pay zero download cost.
+- **Full observability** — Langfuse traces every LLM call with token counts, cost, and latency. Translation quality scores are logged per run so regression is visible over time.
+
+---
+
 ## APIs & Services
 
 | API | Purpose |
 |---|---|
 | [Anthropic API](https://www.anthropic.com/api) | Top Stories generation + fact-check, AI Radar web search + summarisation |
 | [DeepSeek API](https://platform.deepseek.com/) | Headline translation, assessment, distillation, and Chinese translation passes |
-| [Google Gemini API](https://ai.google.dev/) | Kept configured for future experiments; not required by the current summary runtime path |
 | [YouTube Data API v3](https://developers.google.com/youtube/v3) | Fetch Astro Ben Di Quan uploads |
 | [Supabase](https://supabase.com) | Database + REST API |
 | [Langfuse](https://langfuse.com) | LLM observability - cost, latency, translation quality scores |
@@ -122,7 +128,7 @@ flowchart LR
 
 **Prerequisites:** Python 3.12+, Node 18+, `uv` ([install](https://docs.astral.sh/uv/))
 
-Copy `.env.example` -> `.env` and `frontend/.env.example` -> `frontend/.env` and fill in your Supabase, Anthropic, DeepSeek, Gemini, YouTube, Langfuse, and digest email settings.
+Copy `.env.example` -> `.env` and `frontend/.env.example` -> `frontend/.env` and fill in your Supabase, Anthropic, DeepSeek, YouTube, Langfuse, and digest email settings.
 
 ```bash
 # Backend

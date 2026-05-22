@@ -13,8 +13,8 @@ NewsLingo aggregates bilingual (Chinese + English) news from two sources:
 - **联合早报 (Zaobao)** — Singapore newspaper, scraped via monthly sitemaps
 - **Astro 本地圈** — Malaysian YouTube channel, fetched via YouTube Data API v3
 
-All AI tasks use `claude-sonnet-4-6` — translation, assessment, distillation, Pass 1 + Pass 2 of weekly summary. Pass 3 (EN→ZH translation) uses `claude-haiku-4-5` (mechanical task, 3× cheaper).
-Headlines are stored in Supabase. Three GitHub Actions jobs run the pipeline.
+The project uses a **hybrid AI stack**: DeepSeek V4 Flash/Pro for volume tasks (translation, assessment, distillation, EN→ZH passes), Claude Sonnet 4.6 for reasoning-heavy tasks (Top Stories generation + fact-check), and Claude Haiku 4.5 with Sonnet fallback for AI Radar (web-search + summarisation). Both DeepSeek models are accessed via the Anthropic-compatible SDK (`base_url="https://api.deepseek.com/anthropic"`).
+Headlines are stored in Supabase. Four GitHub Actions jobs run the pipeline.
 LLM observability (token counts, costs, latency) is handled by **Langfuse Cloud** (`@observe` decorator pattern).
 
 ---
@@ -87,8 +87,9 @@ They have no news value and would pollute the feed.
 
 ### 5. Assistant prefill — disabled for all calls
 
-All Claude calls use `use_prefill=False`. Every model in use is `claude-sonnet-4-6`,
-which returns HTTP 400 if the conversation ends with an assistant turn.
+All Claude calls use `use_prefill=False`. Claude Sonnet 4.6 returns HTTP 400 if the
+conversation ends with an assistant turn. DeepSeek calls also use `use_prefill=False`
+for consistency.
 
 - **Never** add `use_prefill=True` to any call — it will break in production
 - **Never** change `assess_translations` / `_distill_rules` to `use_prefill=True`
@@ -110,12 +111,12 @@ GitHub Actions (cron: every 3h)
   └── feed_ingest.py
        ├── scrapers/zaobao.py     → scrape sitemap  → rows (singapore/world: category from URL; sea: category=None)
        ├── scrapers/astro.py      → YouTube API     → rows with category=None (Shorts excluded)
-       ├── _translate_batch()     → Claude Sonnet   → fills title_en (+ category for Astro and Zaobao /sea)
-       ├── assess_translations()  → Claude Sonnet   → scores 1–5, retry if <3
-       ├── _distill_rules()       → Claude Sonnet   → improves prompt_rules each run
+       ├── _translate_batch()     → DeepSeek Flash  → fills title_en (+ category for Astro and Zaobao /sea)
+       ├── assess_translations()  → DeepSeek Pro    → scores 1–5, retry if <3
+       ├── _distill_rules()       → DeepSeek Pro    → improves prompt_rules each run
        └── upsert_rows()          → Supabase        → headlines table
 
-GitHub Actions (cron: daily 09:00 SGT)
+GitHub Actions (cron: daily 03:00 SGT)
   └── summary_top_stories.py
        ├── skips if < MIN_NEW_HEADLINES (30) since last run
        ├── pulls past 7 days of headlines (rolling window)
@@ -126,16 +127,28 @@ GitHub Actions (cron: daily 09:00 SGT)
        ├── _call_summary() pass 2 → Claude Sonnet  → fact-check: remove/correct topics whose
        │                                              claims can't be matched; fix tense; hedging
        │                            [cache HIT on headlines block — ~90% cheaper input]
-       ├── _call_summary() pass 3 → Claude Haiku   → translate title + summary to Simplified
+       ├── _call_summary() pass 3 → DeepSeek Flash → translate title + summary to Simplified
        │                                              Chinese; adds title_zh + summary_zh
        └── rotates weekly_summary (deactivates old, inserts new)
+
+GitHub Actions (cron: daily 03:30 SGT)
+  └── summary_ai.py
+       ├── _call_category() × 3  → Claude Haiku    → web-search + summarise one AI category
+       │                            (governance / product / infrastructure)
+       │                            falls back to Claude Sonnet if Haiku unavailable
+       ├── _translate_categories_to_zh() → DeepSeek Flash → adds title_zh + description_zh
+       └── rotates ai_radar (deactivates old, inserts new)
 ```
 
-**Constants:**
+**Constants (feed_ingest.py):**
 - `CLAUDE_BATCH_SIZE = 50` — translation batch size
-- `ASSESS_BATCH_SIZE = 20` — Sonnet drops/duplicates items at higher counts; do not raise
+- `ASSESS_BATCH_SIZE = 20` — DeepSeek Pro drops/duplicates items at higher counts; do not raise
 - `MIN_NEW_HEADLINES = 30` — weekly summary skip threshold (calibrated for 7-day window)
 - `LOOKBACK_DAYS = 7` — rolling window for Top Stories summary
+
+**Constants (summary_ai.py):**
+- `LOOKBACK_DAYS = 7` — AI Radar lookback window
+- `WEB_SEARCH_MAX_USES = 3` — max web searches per category call
 
 ---
 
@@ -148,6 +161,7 @@ GitHub Actions (cron: daily 09:00 SGT)
 | `prompt_rules` | YES | Distilled LLM rules |
 | `learning_digest` | YES | Unused — was written by digest.py (now deleted). Safe to clear. |
 | `weekly_summary` | YES | Top Stories topics; rotated by summary_top_stories.py |
+| `ai_radar` | YES | AI Radar payload; rotated by summary_ai.py |
 | `job_runs` | NO | Audit log — preserve |
 | `visits` | NO | Frontend analytics — preserve |
 | `token_usage` | NO | Legacy — was written by custom pricing.py (now deleted). No longer written; Langfuse handles observability. Safe to ignore. |
@@ -158,13 +172,19 @@ GitHub Actions (cron: daily 09:00 SGT)
 
 | Task | Model | Notes |
 |---|---|---|
-| Translation | `claude-sonnet-4-6` | All sources — better entity disambiguation |
-| Assessment | `claude-sonnet-4-6` | Structured output; runs every 3h |
-| Distillation | `claude-sonnet-4-6` | Rule extraction from failures |
+| Translation | `deepseek-v4-flash` | All sources — high-throughput, cost-effective |
+| Assessment | `deepseek-v4-pro` | Structured output; runs every 3h |
+| Distillation | `deepseek-v4-pro` | Rule extraction from failures |
 | Top Stories Pass 1 + 2 | `claude-sonnet-4-6` | Generate + fact-check — requires reasoning |
-| Top Stories Pass 3 | `claude-haiku-4-5` | EN→ZH translation — mechanical task, 3× cheaper |
+| Top Stories Pass 3 | `deepseek-v4-flash` | EN→ZH translation — mechanical task, cheaper |
+| AI Radar (primary) | `claude-haiku-4-5` | Web search + summarisation per category |
+| AI Radar (fallback) | `claude-sonnet-4-6` | Used if Haiku model is unavailable |
+| AI Radar ZH translation | `deepseek-v4-flash` | Adds title_zh + description_zh per item |
 
-**Model invariant for summary_top_stories.py:** `SUMMARY_MODEL` must be Sonnet or Opus (never Haiku). `SUMMARY_HAIKU_MODEL` must be Haiku. Do not swap Haiku into Pass 1 or Pass 2.
+Both DeepSeek models are accessed via the Anthropic-compatible SDK:
+`anthropic.Anthropic(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com/anthropic")`
+
+**Model invariant for summary_top_stories.py:** `SUMMARY_MODEL` and `SUMMARY_FACTCHECK_MODEL` must be Sonnet or Opus (never Haiku or DeepSeek). `SUMMARY_TRANSLATION_MODEL` must be DeepSeek Flash. Do not swap DeepSeek into Pass 1 or Pass 2.
 
 ### Top Stories topic schema
 
@@ -185,7 +205,7 @@ Each topic in `weekly_summary.payload.topics` (emitted fields only):
 - Pass 1 generates topics (4 emitted fields). Headlines injected into system with `cache_control: ephemeral`.
 - Pass 2 fact-checks every specific claim against source headlines; corrects tense; applies confidence hedging. Headlines cache HIT — ~90% cheaper input tokens.
 - Topics whose core claim cannot be matched to any headline are removed.
-- Pass 3 (Haiku) translates `title` and `summary` into Simplified Chinese, merging `title_zh` and `summary_zh` back by `idx`.
+- Pass 3 (DeepSeek Flash) translates `title` and `summary` into Simplified Chinese, merging `title_zh` and `summary_zh` back by `idx`.
 
 ---
 
@@ -199,7 +219,7 @@ Each topic in `weekly_summary.payload.topics` (emitted fields only):
 | Font size | `FontSizeContext` + Preferences menu | S/M/L; persisted in localStorage |
 | Dark mode | `theme.ts` + Preferences menu | Chakra color mode; warm dark palette |
 | Search | `SearchBar` | Header icon; replaces title row when open; debounced full-text ilike on `title_zh`/`title_en`; results overlay fixed below header |
-| Top Stories | `ThisWeekDrawer` | Header icon (4-pt sparkle SVG); 3-tab layout (Int/SG/MY); EN\|中 language toggle; no expanded analysis; `localStorage('topStories.lang')` |
+| Top Stories + AI Radar | `ThisWeekDrawer` | Header icon (4-pt sparkle SVG); two sections: General (Int/SG/MY) + AI (Governance/Product/Infra); EN\|中 language toggle; `localStorage('topStories.lang')` |
 | Translation Quiz | `QuizDrawer` | Header icon (pencil SVG); pure random pick on every open; user types EN translation; scored 0–100 via `useSemanticScore` (semantic similarity) |
 
 ### Translation Quiz — Transformer.js scoring
@@ -263,6 +283,10 @@ After every `assess_translations()` run, the avg score (1–5 scale) is logged t
 | `summary:factcheck` | Pass 2 — fact-check and correction |
 | `summary:translate-zh` | Pass 3 — Chinese translation |
 
+### Traces & Generations (summary_ai.py)
+
+`_call_ai_radar` is decorated with `@observe(name="ai-radar:generate", as_type="generation")`. It covers all 3 category calls plus the DeepSeek translation pass in one generation span.
+
 ### Langfuse SDK usage notes
 
 - `from langfuse import get_client as _langfuse_client, observe` — only import from root `langfuse`; `langfuse.decorators` and `langfuse.anthropic` do not exist in v4
@@ -313,7 +337,7 @@ uv run pytest tests/test_invariants.py
 | `test_feed_ingest.py` | `_call_claude`, `_extract_json_array`, `_translate_batch`, `_validate_zaobao_categories` |
 | `test_zaobao_scraper.py` | URL→category (incl. sea→None), sitemap regex (singapore/world/sea), china excluded |
 | `test_astro_scraper.py` | Row schema, title cleaning, playlist ID derivation |
-| `test_summary_top_stories.py` | LOOKBACK_DAYS/MIN_NEW_HEADLINES constants, Chinese prompt quality, three-pass `_call_summary` (title_zh/summary_zh, 3 Claude calls, token sums, Pass 3 uses Haiku, Pass 1+2 system is list with cache_control, identical headlines block across passes), `_extract_json_object`, model invariants, `_build_content` grouping |
+| `test_summary_top_stories.py` | LOOKBACK_DAYS/MIN_NEW_HEADLINES constants, Chinese prompt quality, three-pass `_call_summary` (title_zh/summary_zh, 3 Claude calls, token sums, Pass 3 uses DeepSeek Flash, Pass 1+2 system is list with cache_control, identical headlines block across passes), `_extract_json_object`, model invariants, `_build_content` grouping |
 
 CI runs two jobs in parallel on every push: `test` (ruff + pytest) and `build-frontend`
 (catches TS/JSX errors before Vercel).
@@ -323,6 +347,6 @@ CI runs two jobs in parallel on every push: `test` (ruff + pytest) and `build-fr
 ## Data Reset Procedure
 
 1. Confirm code is committed and CI is green.
-2. Delete rows from: `headlines`, `assessment_logs`, `prompt_rules`, `learning_digest`, `weekly_summary`.
+2. Delete rows from: `headlines`, `assessment_logs`, `prompt_rules`, `learning_digest`, `weekly_summary`, `ai_radar`.
 3. Trigger `workflow_dispatch` on the main job workflow, then on `weekly_summary.yml`.
 4. Verify: `SELECT category, COUNT(*) FROM headlines GROUP BY category`.

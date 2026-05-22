@@ -275,7 +275,7 @@ After every `assess_translations()` run, the avg score (1–5 scale) is logged t
 
 ### Traces & Generations (summary_top_stories.py)
 
-`_call_summary` is decorated with `@observe(as_type="generation")`. The 3 individual Claude calls are wrapped as named child observations:
+`_call_summary` is decorated with `@observe(as_type="generation")`. The 3 individual LLM calls (Pass 1+2 via Claude, Pass 3 via DeepSeek) are wrapped as named child observations:
 
 | Child name | What it covers |
 |---|---|

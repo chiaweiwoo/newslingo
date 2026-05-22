@@ -13,7 +13,6 @@ os.environ.setdefault("SUPABASE_URL", "https://fake.supabase.co")
 os.environ.setdefault("SUPABASE_SERVICE_KEY", "fake-key")
 os.environ.setdefault("ANTHROPIC_API_KEY", "fake-anthropic-key")
 os.environ.setdefault("DEEPSEEK_API_KEY", "fake-deepseek-key")
-os.environ.setdefault("GEMINI_API_KEY", "fake-gemini-key")
 
 with patch("supabase.create_client", return_value=MagicMock()):
     with patch("anthropic.Anthropic", return_value=MagicMock()):

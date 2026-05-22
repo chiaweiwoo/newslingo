@@ -1,8 +1,8 @@
 """
-NewsLingo AI summary job - runs daily at 09:30 SGT.
+NewsLingo AI Radar job — runs daily at 03:30 SGT.
 
-This version restores Claude web search for broad AI coverage, then uses
-DeepSeek Flash to translate the final items into Simplified Chinese.
+Uses Claude Haiku with web search to surface AI developments across governance,
+product, and infrastructure, then DeepSeek Flash for Simplified Chinese translation.
 """
 
 import json
@@ -28,7 +28,6 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")  # kept for future experiments
 os.environ.setdefault("LANGFUSE_HOST", os.getenv("LANGFUSE_BASE_URL", "https://cloud.langfuse.com"))
 
 if not ANTHROPIC_API_KEY:

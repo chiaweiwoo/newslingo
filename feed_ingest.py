@@ -39,7 +39,7 @@ deepseek = anthropic.Anthropic(
 )
 
 CLAUDE_BATCH_SIZE  = 50          # translation batch size
-ASSESS_BATCH_SIZE  = 20          # assess batch — smaller; Sonnet drops/duplicates items at higher counts
+ASSESS_BATCH_SIZE  = 20          # assess batch — smaller; DeepSeek Pro drops/duplicates items at higher counts
 TRANSLATE_MODEL    = "deepseek-v4-flash"
 ASSESS_MODEL       = "deepseek-v4-pro"
 DISTILL_MODEL      = "deepseek-v4-pro"
@@ -399,7 +399,6 @@ REPAIR_SYSTEM_PROMPT = (
     "- Return ONLY the valid JSON object or array. No preamble, no explanation, no markdown fences.\n"
     "- If the content is unsalvageable, return an empty array [] or object {} as appropriate."
 )
-THINKING_DISABLED  = {"type": "disabled"}
 
 
 def _repair_json_with_deepseek(body: str) -> str | None:
@@ -852,7 +851,7 @@ def upsert_rows(rows: list[dict]) -> None:
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def _main() -> None:
-    print("[job] NewsLingo job starting — build: hardening (post-bf21d57)", flush=True)
+    print("[job] NewsLingo job starting", flush=True)
     start_time = time.perf_counter()
     items_found = 0
     items_processed = 0

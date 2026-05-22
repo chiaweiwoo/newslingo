@@ -1,9 +1,9 @@
 """
-NewsLingo Top Stories summary job - runs daily at 09:00 SGT.
+NewsLingo Top Stories summary job — runs daily at 03:00 SGT.
 
-This version restores the headline-driven summary pipeline: it reads recent
-translated headlines from Supabase, uses Claude Sonnet for generation and
-fact-checking, then uses DeepSeek Flash for Simplified Chinese translation.
+Reads recent translated headlines from Supabase, uses Claude Sonnet for
+three-pass topic generation and fact-checking, then uses DeepSeek Flash for
+Simplified Chinese translation.
 """
 
 import json
@@ -27,7 +27,6 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")  # kept for future experiments
 os.environ.setdefault("LANGFUSE_HOST", os.getenv("LANGFUSE_BASE_URL", "https://cloud.langfuse.com"))
 
 if not ANTHROPIC_API_KEY:

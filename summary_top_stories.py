@@ -9,6 +9,7 @@ Simplified Chinese translation.
 import json
 import os
 import sys
+import time
 import types
 from datetime import datetime, timedelta, timezone
 
@@ -379,30 +380,38 @@ def _store_summary(now: datetime, payload: dict, previous: dict | None) -> None:
 def _main() -> None:
     print("[summary] NewsLingo Top Stories job starting", flush=True)
 
-    try:
-        now = datetime.now(timezone.utc)
-        since_iso = (now - timedelta(days=LOOKBACK_DAYS)).isoformat()
-        previous = _load_previous_summary()
+    max_attempts = 3
+    for attempt in range(1, max_attempts + 1):
+        try:
+            now = datetime.now(timezone.utc)
+            since_iso = (now - timedelta(days=LOOKBACK_DAYS)).isoformat()
+            previous = _load_previous_summary()
 
-        headlines = _load_recent_headlines(since_iso)
-        print(f"[summary] {len(headlines)} headlines in past {LOOKBACK_DAYS} days", flush=True)
-        if not headlines:
-            print("[summary] no headlines found - skipping", flush=True)
+            headlines = _load_recent_headlines(since_iso)
+            print(f"[summary] {len(headlines)} headlines in past {LOOKBACK_DAYS} days", flush=True)
+            if not headlines:
+                print("[summary] no headlines found - skipping", flush=True)
+                return
+
+            content = _build_content(headlines)
+            payload, _usage = _call_summary(content)
+            topic_count = len(payload.get("topics", []))
+            print(f"[summary] final: {topic_count} topic clusters", flush=True)
+            if not topic_count:
+                print("[summary] no topics returned - skipping storage", flush=True)
+                return
+
+            _store_summary(now, payload, previous)
+            print("[summary] summary updated successfully", flush=True)
             return
-
-        content = _build_content(headlines)
-        payload, _usage = _call_summary(content)
-        topic_count = len(payload.get("topics", []))
-        print(f"[summary] final: {topic_count} topic clusters", flush=True)
-        if not topic_count:
-            print("[summary] no topics returned - skipping storage", flush=True)
-            return
-
-        _store_summary(now, payload, previous)
-        print("[summary] summary updated successfully", flush=True)
-    except Exception as exc:
-        print(f"[summary] ERROR: {exc}", flush=True)
-        sys.exit(1)
+        except Exception as exc:
+            print(f"[summary] ERROR (attempt {attempt}/{max_attempts}): {exc}", flush=True)
+            if attempt < max_attempts:
+                delay = 10 * attempt
+                print(f"[summary] retrying in {delay}s...", flush=True)
+                time.sleep(delay)
+            else:
+                sys.exit(1)
 
 
 if __name__ == "__main__":

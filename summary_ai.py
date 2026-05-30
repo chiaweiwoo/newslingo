@@ -441,18 +441,26 @@ def _store_radar(now: datetime, payload: dict, previous: dict | None) -> None:
 def _main() -> None:
     print("[ai-radar] NewsLingo AI summary job starting", flush=True)
 
-    try:
-        now = datetime.now(timezone.utc)
-        previous = _load_previous_radar()
-        payload, _usage = _call_ai_radar(now)
-        total_items = sum(len(category.get("items", [])) for category in payload.get("categories", []))
-        print(f"[ai-radar] total final items: {total_items}", flush=True)
-        print(f"[ai-radar] generated {total_items} items across 3 categories", flush=True)
-        _store_radar(now, payload, previous)
-        print("[ai-radar] AI summary updated successfully", flush=True)
-    except Exception as exc:
-        print(f"[ai-radar] ERROR: {exc}", flush=True)
-        sys.exit(1)
+    max_attempts = 3
+    for attempt in range(1, max_attempts + 1):
+        try:
+            now = datetime.now(timezone.utc)
+            previous = _load_previous_radar()
+            payload, _usage = _call_ai_radar(now)
+            total_items = sum(len(category.get("items", [])) for category in payload.get("categories", []))
+            print(f"[ai-radar] total final items: {total_items}", flush=True)
+            print(f"[ai-radar] generated {total_items} items across 3 categories", flush=True)
+            _store_radar(now, payload, previous)
+            print("[ai-radar] AI summary updated successfully", flush=True)
+            return
+        except Exception as exc:
+            print(f"[ai-radar] ERROR (attempt {attempt}/{max_attempts}): {exc}", flush=True)
+            if attempt < max_attempts:
+                delay = 10 * attempt
+                print(f"[ai-radar] retrying in {delay}s...", flush=True)
+                time.sleep(delay)
+            else:
+                sys.exit(1)
 
 
 if __name__ == "__main__":
